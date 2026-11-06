@@ -2,7 +2,7 @@ import { os } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { models } from '../lib/models';
 import { createArchive, type Archive } from './archive';
-import { assertOrigin, verifyTurnstile } from './security';
+import { assertOrigin } from './security';
 import { parseInput } from './input';
 import { imageEvents, openImageRequest } from './openai';
 import { PublicError, safeError } from './errors';
@@ -10,14 +10,8 @@ import { PublicError, safeError } from './errors';
 export const router = {
   config: os.$context<{ env: Env }>().handler(({ context }) => ({
     models,
-    siteKey: context.env.TURNSTILE_SITE_KEY,
     previewFormats: context.env.ENABLE_PREVIEW_FORMATS === 'true',
-    configured: Boolean(
-      context.env.OPENAI_API_KEY &&
-      context.env.TURNSTILE_SECRET_KEY &&
-      context.env.TURNSTILE_SITE_KEY &&
-      context.env.APP_ORIGIN,
-    ),
+    configured: Boolean(context.env.OPENAI_API_KEY && context.env.APP_ORIGIN),
   })),
 };
 const rpc = new RPCHandler(router);
@@ -50,7 +44,6 @@ export async function handleApi(
     assertOrigin(request, env.APP_ORIGIN);
     if (!env.OPENAI_API_KEY) throw new PublicError('生图服务尚未配置', 503);
     const input = await parseInput(request, env.ENABLE_PREVIEW_FORMATS === 'true');
-    await verifyTurnstile(input.turnstileToken, request, env, fetcher);
     archive = deps.archive ?? createArchive(env);
     if (!(await archive.reserve(input.requestId))) throw new PublicError('该请求已提交，请勿重复生成。', 409);
     requestId = input.requestId;
@@ -66,6 +59,7 @@ export async function handleApi(
       safetyId,
       controller.signal,
       fetcher,
+      { requestId, colo: typeof request.cf?.colo === 'string' ? request.cf.colo : undefined },
     );
     const events = imageEvents(upstream, input.settings, requestId, archive);
     const encoder = new TextEncoder();

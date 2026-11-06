@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowUpRight,
@@ -8,16 +8,13 @@ import {
   LoaderCircle,
   Pencil,
   Plus,
-  RotateCcw,
   Square,
   X,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Controls, normalizeSettings, compatibleGuides } from './controls';
 import { History } from './history';
-import { TurnstileWidget } from './turnstile';
 import { LocalImage } from './image';
-import { turnstileSession } from '../lib/turnstile-session';
 import { useStudio } from '../lib/store';
 import { defaultSettings, generationSettingsSchema, outputEventSchema, type Settings } from '../lib/contract';
 import { client } from '../lib/rpc';
@@ -35,8 +32,6 @@ export function Studio() {
   const [config, setConfig] = useState<Awaited<ReturnType<typeof client.config>>>();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [token, setToken] = useState(() => turnstileSession.read());
-  const [challenge, setChallenge] = useState(0);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [files, setFiles] = useState<File[]>([]);
@@ -49,19 +44,6 @@ export function Studio() {
   const [revision, setRevision] = useState(0);
   const [unsaved, setUnsaved] = useState<Artwork[]>([]);
   const controller = useRef<AbortController | null>(null);
-  const onToken = useCallback((next: string) => {
-    turnstileSession.save(next);
-    setToken(next);
-  }, []);
-  useEffect(() => {
-    if (!token) return;
-    const timeout = setTimeout(() => {
-      turnstileSession.clear();
-      setToken('');
-    }, turnstileSession.remaining());
-    return () => clearTimeout(timeout);
-  }, [token]);
-  const onChallengeError = useCallback((message: string) => setError(message), []);
   useEffect(() => {
     void client
       .config()
@@ -97,10 +79,6 @@ export function Studio() {
       setError(parsed.error.issues[0]?.message ?? '请检查参数');
       return;
     }
-    if (!token) {
-      setError('请先完成人机验证');
-      return;
-    }
     if (settings.mode === 'edit' && !files.length) {
       setError('请先上传参考图');
       return;
@@ -122,12 +100,6 @@ export function Studio() {
       setError('还有图片未保存，请先重试保存，或下载后确认继续');
       return;
     }
-    const verifiedToken = turnstileSession.consume();
-    setToken('');
-    if (!verifiedToken) {
-      setError('验证已过期，请重新验证');
-      return;
-    }
     const snapshot = parsed.data;
     const abort = new AbortController();
     controller.current = abort;
@@ -139,10 +111,7 @@ export function Studio() {
     setElapsed(0);
     setBusy(true);
     const form = new FormData();
-    form.set(
-      'payload',
-      JSON.stringify({ settings: snapshot, requestId: crypto.randomUUID(), turnstileToken: verifiedToken }),
-    );
+    form.set('payload', JSON.stringify({ settings: snapshot, requestId: crypto.randomUUID() }));
     if (snapshot.mode === 'edit') {
       files.forEach((file) => form.append('image', file));
       if (guides.mask) form.set('mask', guides.mask);
@@ -215,8 +184,6 @@ export function Studio() {
       reader?.releaseLock();
       controller.current = null;
       setBusy(false);
-      setToken('');
-      setChallenge((n) => n + 1);
     }
   };
   const sendToEdit = (art: Artwork) => {
@@ -333,14 +300,6 @@ export function Studio() {
             />
           </fieldset>
           <div className="generate-area">
-            {config?.siteKey && !token && !busy && (
-              <TurnstileWidget
-                siteKey={config.siteKey}
-                refresh={challenge}
-                onToken={onToken}
-                onError={onChallengeError}
-              />
-            )}
             {config && !config.configured && (
               <p className="error">生图服务尚未配置完成，请联系站点维护者。</p>
             )}
@@ -355,7 +314,7 @@ export function Studio() {
             <div className="generate-buttons">
               <Button
                 onClick={() => void generate()}
-                disabled={busy || !config?.configured || !token || !settings.prompt.trim()}
+                disabled={busy || !config?.configured || !settings.prompt.trim()}
                 className="generate-button"
               >
                 {busy ? <LoaderCircle className="spin" size={17} /> : <ImagePlus size={17} />}
@@ -372,12 +331,6 @@ export function Studio() {
                 </Button>
               )}
             </div>
-            {!busy && config?.siteKey && !token && (
-              <button className="retry-challenge" onClick={() => setChallenge((n) => n + 1)}>
-                <RotateCcw size={12} />
-                重新验证
-              </button>
-            )}
           </div>
         </section>
         <section className="output" aria-label="生成结果">

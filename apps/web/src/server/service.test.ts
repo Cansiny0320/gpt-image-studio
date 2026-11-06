@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { defaultSettings } from '../lib/contract';
 import { imageEvents, openImageRequest, upstreamBody } from './openai';
 import { readSSE, readJSONImages } from './stream';
-import { assertOrigin, readLimited, verifyTurnstile } from './security';
+import { assertOrigin, readLimited } from './security';
 import type { Archive } from './archive';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aUe0AAAAASUVORK5CYII=';
@@ -95,6 +95,45 @@ describe('upstream response and archival', () => {
     ).rejects.toThrow('额度不足');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it('reports region restrictions without exposing upstream details', async () => {
+    const logger = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const fetcher = vi.fn(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'unsupported_country_region_territory',
+              message: 'Country not supported; private diagnostic',
+            },
+          },
+          { status: 403 },
+        ),
+      );
+      await expect(
+        openImageRequest(
+          defaultSettings,
+          { images: [] },
+          'private-key',
+          'anonymous',
+          new AbortController().signal,
+          fetcher,
+          { requestId: 'job', colo: 'SEA' },
+        ),
+      ).rejects.toThrow('上游生图服务拒绝了当前请求来源地区');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(logger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'image_upstream_error',
+          reason: 'region_restricted',
+          requestId: 'job',
+          colo: 'SEA',
+        }),
+      );
+      expect(JSON.stringify(logger.mock.calls)).not.toContain('private');
+    } finally {
+      logger.mockRestore();
+    }
+  });
   it('excludes UI mode and never includes credentials in the provider body', () => {
     const payload = JSON.parse(upstreamBody(defaultSettings, { images: [] }, 'anonymous') as string);
     expect(payload.mode).toBeUndefined();
@@ -116,19 +155,5 @@ describe('request security', () => {
   });
   it('bounds bodies even without content-length', async () => {
     await expect(readLimited(bytes(['12345', '67890']), 8)).rejects.toThrow('大小限制');
-  });
-  it('fails closed when Turnstile rejects a token', async () => {
-    await expect(
-      verifyTurnstile(
-        'invalid',
-        new Request('http://127.0.0.1:4327'),
-        {
-          APP_ENV: 'development',
-          APP_ORIGIN: 'http://127.0.0.1:4327',
-          TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
-        },
-        async () => Response.json({ success: false }),
-      ),
-    ).rejects.toThrow('失效');
   });
 });

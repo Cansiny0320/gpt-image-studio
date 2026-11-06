@@ -4,6 +4,7 @@ import type { Settings, OutputEvent } from '../lib/contract';
 import type { Archive } from './archive';
 import { PublicError } from './errors';
 import { readJSONImages, readSSE } from './stream';
+import { upstreamDiagnostic } from './upstream-error';
 
 const imageSchema = z.object({
   b64_json: z
@@ -46,6 +47,7 @@ export async function openImageRequest(
   safetyId: string,
   signal: AbortSignal,
   fetcher: typeof fetch,
+  context?: { requestId: string; colo?: string },
 ) {
   const response = await fetcher(
     `https://api.openai.com/v1/images/${settings.mode === 'edit' ? 'edits' : 'generations'}`,
@@ -60,15 +62,26 @@ export async function openImageRequest(
     },
   );
   if (!response.ok) {
-    await response.body?.cancel();
+    const diagnostic = await upstreamDiagnostic(response);
+    console.error({
+      event: 'image_upstream_error',
+      ...diagnostic,
+      requestId: context?.requestId,
+      colo: context?.colo,
+      model: settings.model,
+      format: settings.output_format,
+      stream: settings.stream,
+    });
     const message =
-      response.status === 429
-        ? '生图服务额度不足或请求过于频繁，请稍后再试。'
-        : response.status === 401 || response.status === 403
-          ? '生图服务暂不可用，请联系站点维护者检查权限。'
-          : response.status === 400
-            ? '模型未接受这组参数或图片，请调整配置后重试。'
-            : '上游生图服务暂时不可用，请稍后重试。';
+      diagnostic.reason === 'region_restricted'
+        ? '上游生图服务拒绝了当前请求来源地区，请联系站点维护者。'
+        : response.status === 429
+          ? '生图服务额度不足或请求过于频繁，请稍后再试。'
+          : response.status === 401 || response.status === 403
+            ? '生图服务暂不可用，请联系站点维护者检查权限。'
+            : response.status === 400
+              ? '模型未接受这组参数或图片，请调整配置后重试。'
+              : '上游生图服务暂时不可用，请稍后重试。';
     throw new PublicError(message, response.status === 429 ? 429 : 502);
   }
   if (!response.body) throw new PublicError('上游未返回图片', 502);

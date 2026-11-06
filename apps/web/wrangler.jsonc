@@ -25,12 +25,12 @@
   "vars": {
     "APP_ENV": "production",
     "APP_ORIGIN": "https://image.cansiny.top",
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAF1556BsZ5UHb_yc",
     "ENABLE_PREVIEW_FORMATS": "false",
   },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0.1,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": false },
     "traces": { "enabled": true, "head_sampling_rate": 0.1 },
   },
 }

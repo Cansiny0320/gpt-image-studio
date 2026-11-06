@@ -100,7 +100,8 @@ export const defaultSettings: Settings = {
 export const envelopeSchema = z.strictObject({
   settings: generationSettingsSchema,
   requestId: z.uuid(),
-  turnstileToken: z.string().min(1).max(2048),
+  // Accept but ignore tokens sent by tabs opened before CAPTCHA removal.
+  turnstileToken: z.string().max(2048).optional(),
 });
 export type OutputEvent =
   | { type: 'preview'; b64: string; format: Settings['output_format'] }

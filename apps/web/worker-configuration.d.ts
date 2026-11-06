@@ -8,8 +8,6 @@ interface __BaseEnv_Env {
 	APP_ENV: string;
 	APP_ORIGIN: string;
 	OPENAI_API_KEY: string;
-	TURNSTILE_SITE_KEY: string;
-	TURNSTILE_SECRET_KEY: string;
 	ENABLE_PREVIEW_FORMATS: string;
 }
 declare namespace Cloudflare {
@@ -23,7 +21,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_ENV" | "APP_ORIGIN" | "OPENAI_API_KEY" | "TURNSTILE_SITE_KEY" | "TURNSTILE_SECRET_KEY" | "ENABLE_PREVIEW_FORMATS">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_ENV" | "APP_ORIGIN" | "OPENAI_API_KEY" | "ENABLE_PREVIEW_FORMATS">> {}
 }
 declare module "*.txt" {
 	const value: string;

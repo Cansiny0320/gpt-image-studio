@@ -9,8 +9,6 @@ const env = {
   APP_ENV: 'development',
   APP_ORIGIN: origin,
   OPENAI_API_KEY: 'private-test-key',
-  TURNSTILE_SITE_KEY: 'public-site-key',
-  TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
   ENABLE_PREVIEW_FORMATS: 'false',
 } as Env;
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aUe0AAAAASUVORK5CYII=';
@@ -20,7 +18,6 @@ function form(mode: 'generate' | 'edit' = 'generate') {
     'payload',
     JSON.stringify({
       requestId: crypto.randomUUID(),
-      turnstileToken: 'test-token',
       settings: {
         ...defaultSettings,
         prompt: 'A blue cup',
@@ -43,11 +40,7 @@ function archive(): Archive {
   };
 }
 function upstream() {
-  return vi.fn<typeof fetch>(async (url) =>
-    String(url).includes('siteverify')
-      ? Response.json({ success: true })
-      : Response.json({ data: [{ b64_json: png }] }),
-  );
+  return vi.fn<typeof fetch>(async () => Response.json({ data: [{ b64_json: png }] }));
 }
 describe('API boundary', () => {
   it.each(['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'])(
@@ -89,11 +82,7 @@ describe('API boundary', () => {
       frame_duration_ms: 200,
     });
     body.set('payload', JSON.stringify(payload));
-    const fetcher = vi.fn<typeof fetch>(async (url) =>
-      String(url).includes('siteverify')
-        ? Response.json({ success: true })
-        : Response.json({ data: [{ b64_json: gif }] }),
-    );
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ data: [{ b64_json: gif }] }));
     const a = archive();
     const response = await handleApi(request(body), env, { fetcher, archive: a });
     const events = (await response.text())
@@ -102,7 +91,7 @@ describe('API boundary', () => {
       .map((line) => JSON.parse(line));
     expect(events[0]).toMatchObject({ type: 'image', b64: gif, format: 'gif', archived: true });
     expect(events[1]).toEqual({ type: 'done', count: 1 });
-    expect(JSON.parse(fetcher.mock.calls[1][1]?.body as string)).toMatchObject({
+    expect(JSON.parse(fetcher.mock.calls[0][1]?.body as string)).toMatchObject({
       model: 'gpt-image-2.6-flare',
       output_format: 'gif',
       size: 'auto',
@@ -123,7 +112,7 @@ describe('API boundary', () => {
     body.set('payload', JSON.stringify(payload));
     await expect(parseInput(request(body), false)).rejects.toThrow('SVG');
   });
-  it('rejects batches over three before verification, archival or generation', async () => {
+  it('rejects batches over three before archival or generation', async () => {
     const body = form();
     const payload = JSON.parse(body.get('payload') as string);
     payload.settings.n = 4;
@@ -136,7 +125,7 @@ describe('API boundary', () => {
     expect(fetcher).not.toHaveBeenCalled();
     expect(a.reserve).not.toHaveBeenCalled();
   });
-  it('rejects another origin before verification, archival or generation', async () => {
+  it('rejects another origin before archival or generation', async () => {
     const fetcher = upstream();
     const a = archive();
     const response = await handleApi(request(form(), 'https://other.test'), env, {
@@ -160,8 +149,7 @@ describe('API boundary', () => {
     const fetcher = upstream();
     const response = await handleApi(request(), env, { fetcher, archive: a });
     expect(response.status).toBe(409);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(String(fetcher.mock.calls[0][0])).toContain('siteverify');
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it('returns final bytes while retaining the key exclusively in the upstream header', async () => {
     const a = archive();
@@ -179,19 +167,33 @@ describe('API boundary', () => {
         .map((line) => JSON.parse(line).type),
     ).toEqual(['image', 'done']);
     expect(a.save).toHaveBeenCalledTimes(1);
-    expect(new Headers(fetcher.mock.calls[1][1]?.headers).get('authorization')).toBe(
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('authorization')).toBe(
       `Bearer ${env.OPENAI_API_KEY}`,
     );
   });
-  it('rejects production use of the local Turnstile test secret', async () => {
+  it('accepts legacy tokens without performing verification', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    payload.turnstileToken = 'expired-token-from-old-tab';
+    body.set('payload', JSON.stringify(payload));
+    const fetcher = upstream();
+    const response = await handleApi(request(body), env, { fetcher, archive: archive() });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1]?.body).not.toContain('expired-token');
+  });
+  it('generates without a CAPTCHA token or Turnstile bindings in production', async () => {
     const fetcher = upstream();
     const response = await handleApi(
       request(),
       { ...env, APP_ENV: 'production' },
       { fetcher, archive: archive() },
     );
-    expect(response.status).toBe(503);
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://api.openai.com/v1/images/generations');
   });
 });
 describe('reference uploads', () => {

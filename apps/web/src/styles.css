@@ -274,10 +274,6 @@ input[type='checkbox'] {
 .generate-area {
   margin-top: 24px;
 }
-.turnstile {
-  min-height: 0;
-  margin-bottom: 14px;
-}
 .generate-buttons {
   display: flex;
   gap: 8px;
@@ -286,18 +282,6 @@ input[type='checkbox'] {
   flex: 1;
   min-height: 43px;
   font-size: 13px;
-}
-.retry-challenge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border: 0;
-  background: none;
-  padding: 10px;
-  width: 100%;
-  font-size: 11px;
-  color: var(--muted);
 }
 .error {
   display: flex;

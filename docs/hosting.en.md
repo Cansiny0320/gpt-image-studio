@@ -20,9 +20,9 @@ pnpm db:local
 pnpm dev
 ```
 
-Open [127.0.0.1:4327](http://127.0.0.1:4327). Local development uses emulated D1 / R2 and official Turnstile test keys; it does not write to production storage.
+Open [127.0.0.1:4327](http://127.0.0.1:4327). Local development uses emulated D1 / R2; it does not write to production storage.
 
-Local configuration uses `APP_ENV=development`, `APP_ORIGIN=http://127.0.0.1:4327`, and official Turnstile test keys. Test keys are accepted only in development on localhost.
+Local configuration uses `APP_ENV=development`, `APP_ORIGIN=http://127.0.0.1:4327`.
 
 `pnpm db:local` applies local migrations; `pnpm dev` starts the development server. Local D1 / R2 data lives in `apps/web/.wrangler`. Real image generation still calls the OpenAI API and incurs API usage.
 
@@ -42,8 +42,7 @@ You need a Cloudflare account with Workers, D1, and R2 enabled, a domain managed
 
 1. Sign in with `pnpm --filter @studio/web exec wrangler login` and confirm the account with `wrangler whoami`.
 2. Create a D1 database and an R2 bucket. From `apps/web`, run `pnpm exec wrangler d1 create studio-archive` and `pnpm exec wrangler r2 bucket create gpt-image-studio-archive`. You can choose different names.
-3. Create a Managed Turnstile widget in the Cloudflare dashboard, allowing only your site's hostname. Keep the public site key and private secret key.
-4. Update `apps/web/wrangler.jsonc` using the table below. Keep R2 private, with public development URLs and custom domains disabled.
+3. Update `apps/web/wrangler.jsonc` using the table below. Keep R2 private, with public development URLs and custom domains disabled.
 
 | Configuration                 | Value                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------- |
@@ -54,14 +53,12 @@ You need a Cloudflare account with Workers, D1, and R2 enabled, a domain managed
 | `r2_buckets[]`                | Your bucket name; keep `binding: IMAGES`                                                    |
 | `vars.APP_ORIGIN`             | Your full HTTPS origin without a trailing slash, matching the domain                        |
 | `vars.APP_ENV`                | `production`                                                                                |
-| `vars.TURNSTILE_SITE_KEY`     | Your real Turnstile site key                                                                |
 | `vars.ENABLE_PREVIEW_FORMATS` | Controls SVG only; keep `false` until SVG access is verified. GIF is enabled for 2.6 models |
 
 From `apps/web`, set secrets interactively. Do not put keys in command arguments, Git, or plain environment-variable configuration:
 
 ```bash
 pnpm exec wrangler secret put OPENAI_API_KEY
-pnpm exec wrangler secret put TURNSTILE_SECRET_KEY
 ```
 
 If the Worker does not exist, follow Wrangler's prompt to create it with the configured name. Return to the repository root, apply migrations, and deploy. Replace `studio-archive` below if you chose a different database name:
@@ -79,9 +76,9 @@ pnpm run deploy
 
 After code changes, run `pnpm build` and `pnpm verify`. Apply any new remote migrations before `pnpm run deploy`. README and documentation changes alone do not require redeployment.
 
-After deploying, use a browser to check HTTPS, real image generation, local history after reload, and `/sponsor`. Confirm successful D1 archival, private R2 access, and the presence of both secrets. The app does not impose daily image quotas or a fixed global concurrency cap; API and Cloudflare service limits still apply.
+After deploying, use a browser to check HTTPS, real image generation, local history after reload, and `/sponsor`. Confirm successful D1 archival, private R2 access, and the presence of the `OPENAI_API_KEY` Secret. The app does not impose daily image quotas or a fixed global concurrency cap; API and Cloudflare service limits still apply.
 
-Production disables workers.dev and preview URLs. Missing required configuration, an origin mismatch, or failed Turnstile verification rejects image generation. Workers Static Assets serves static navigation and assets; `/api/*` runs through the Worker.
+Production disables workers.dev and preview URLs. Missing required configuration or an origin mismatch rejects image generation. Workers Static Assets serves static navigation and assets; `/api/*` runs through the Worker.
 
 To roll back code, use Worker version rollback in the Cloudflare dashboard. This does not roll back the D1 schema, delete archives, or restore browser data. Check compatibility before rolling back a version that depends on schema changes.
 
