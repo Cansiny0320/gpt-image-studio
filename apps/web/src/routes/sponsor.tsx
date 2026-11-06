@@ -20,7 +20,12 @@ function Sponsor() {
       <h1>赞赏</h1>
       <p>觉得好用的话，欢迎通过微信或支付宝支持一下。</p>
       <a href="/sponsorship.png" target="_blank" rel="noreferrer">
-        <img src="/sponsorship.webp" width="1536" height="1024" alt="微信和支付宝赞赏收款码" />
+        <img
+          src="https://heybox.cansiny.top/sponsors/sponsorship-20261101.webp"
+          width="1536"
+          height="1024"
+          alt="微信和支付宝赞赏收款码"
+        />
       </a>
       <a href="/sponsorship.png" target="_blank" rel="noreferrer" className="nav-link">
         查看原图
