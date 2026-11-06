@@ -1,0 +1,2 @@
+CREATE TABLE requests (id TEXT PRIMARY KEY NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL, prompt TEXT);
+CREATE TABLE images (id TEXT PRIMARY KEY NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), object_key TEXT NOT NULL, mime TEXT NOT NULL, bytes INTEGER NOT NULL);

@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gpt-image-studio",
+  "account_id": "b844e50c43f36e313952cf13a4dafca7",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "image.cansiny.top", "custom_domain": true }],
+  "main": "src/server.ts",
+  "compatibility_date": "2026-11-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "studio-archive",
+      "database_id": "54dfced4-d220-4d1f-be6c-521cb37ce661",
+      "migrations_dir": "drizzle",
+    },
+  ],
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "gpt-image-studio-archive" }],
+  "vars": {
+    "APP_ENV": "production",
+    "APP_ORIGIN": "https://image.cansiny.top",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAF1556BsZ5UHb_yc",
+    "ENABLE_PREVIEW_FORMATS": "false",
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 },
+  },
+}

@@ -1,0 +1,17 @@
+{
+  "name": "gpt-image-studio",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @studio/web dev",
+    "build": "pnpm --filter @studio/web build",
+    "test": "pnpm --filter @studio/web test",
+    "typecheck": "pnpm --filter @studio/web typecheck",
+    "verify": "pnpm --filter @studio/web verify",
+    "db:local": "pnpm --filter @studio/web db:local",
+    "deploy": "pnpm build && pnpm --filter @studio/web deploy"
+  }
+}
