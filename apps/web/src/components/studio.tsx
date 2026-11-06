@@ -240,7 +240,7 @@ export function Studio() {
             </a>
           </div>
           <p className="project-note">
-            免费开源，请勿付费购买 · <Link to="/sponsor">欢迎赞赏</Link>
+            免费开源，请勿付费购买 · <Link to="/guide">使用指南</Link>
           </p>
         </div>
         <nav aria-label="主导航">

@@ -4,7 +4,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-const publicPages = ['/', '/sponsor'];
+const publicPages = ['/', '/guide', '/sponsor'];
 
 function searchAssets(origin: string): Plugin {
   return {
@@ -22,6 +22,24 @@ function searchAssets(origin: string): Plugin {
         type: 'asset',
         fileName: 'sitemap.xml',
         source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
+      });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'llms.txt',
+        source: `# GPT Image Studio
+
+> 开源的 GPT Image 网页工作台，支持文生图、参考图编辑和本地历史记录。
+
+## 使用
+
+- [工作台](${origin}/)
+- [使用指南](${origin}/guide)
+
+## 项目文档
+
+- [使用说明与数据保存](https://raw.githubusercontent.com/Cansiny0320/gpt-image-studio/main/docs/usage.md)
+- [配置与自部署](https://raw.githubusercontent.com/Cansiny0320/gpt-image-studio/main/docs/hosting.md)
+`,
       });
     },
   };

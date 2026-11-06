@@ -12,7 +12,7 @@ export const Route = createFileRoute('/sponsor')({
 });
 function Sponsor() {
   return (
-    <main className="sponsor-page">
+    <main className="info-page sponsor-page">
       <Link to="/" className="nav-link">
         <ArrowLeft size={16} />
         返回工作台

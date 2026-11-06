@@ -567,12 +567,12 @@ input[type='checkbox'] {
   font-size: 14px;
   color: var(--muted);
 }
-.sponsor-page {
+.info-page {
   max-width: 900px;
   margin: 0 auto;
   padding: 44px 28px 70px;
 }
-.sponsor-page h1 {
+.info-page h1 {
   margin: 44px 0 12px;
   font-size: 30px;
   font-weight: 600;
@@ -586,6 +586,23 @@ input[type='checkbox'] {
   height: auto;
   border-radius: 9px;
   margin: 26px 0 20px;
+}
+.guide-page {
+  max-width: 760px;
+  line-height: 1.75;
+}
+.guide-page h2 {
+  margin: 28px 0 8px;
+  font-size: 19px;
+  font-weight: 600;
+}
+.guide-page p + p {
+  margin-top: 8px;
+}
+.guide-page p a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 .page-error {
   padding: 50px;
