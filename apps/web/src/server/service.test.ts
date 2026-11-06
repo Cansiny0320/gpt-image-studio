@@ -19,6 +19,18 @@ function bytes(parts: string[]) {
   });
 }
 describe('upstream response and archival', () => {
+  it.each(['generate', 'edit'] as const)(
+    'omits streaming-only fields from nonstreaming %s requests',
+    (mode) => {
+      const body = upstreamBody(
+        { ...defaultSettings, mode, stream: false, partial_images: 0 },
+        { images: [] },
+        'anonymous',
+      );
+      const payload = typeof body === 'string' ? JSON.parse(body) : Object.fromEntries(body);
+      expect(payload.partial_images).toBeUndefined();
+    },
+  );
   it('parses fragmented SSE and archives final images only', async () => {
     const a = archive();
     const text = `data: ${JSON.stringify({ type: 'image_generation.partial_image', b64_json: png })}\r\n\r\ndata: ${JSON.stringify({ type: 'image_generation.completed', b64_json: png })}\r\n\r\n`;

@@ -1,5 +1,7 @@
 # 上线验证
 
+> 历史验证记录；GIF 开放及最新参数检查见 [API 兼容性检查](api-compatibility.md)。
+
 验证日期：2026-11-06。线上地址：[image.cansiny.top](https://image.cansiny.top)。
 
 ## 发布与配置

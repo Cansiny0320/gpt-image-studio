@@ -18,6 +18,7 @@ export function capabilities(model: ImageModel) {
   return {
     customSize: modern,
     advanced,
+    gif: model.startsWith('gpt-image-2.6-'),
     fidelity: model === 'gpt-image-1.5' || model === 'gpt-image-1-mini',
     highFidelity: model === 'gpt-image-1.5',
   };

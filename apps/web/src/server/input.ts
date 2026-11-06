@@ -30,8 +30,7 @@ export async function parseInput(request: Request, previewFormats: boolean) {
   const parsed = envelopeSchema.safeParse(json);
   if (!parsed.success) throw new PublicError(parsed.error.issues[0]?.message ?? '参数无效');
   const { settings } = parsed.data;
-  if (!previewFormats && ['svg', 'gif'].includes(settings.output_format))
-    throw new PublicError('站点尚未开启 SVG / GIF 预览能力');
+  if (!previewFormats && settings.output_format === 'svg') throw new PublicError('站点尚未开启 SVG 预览能力');
   const files = form.getAll('image');
   const mask = form.get('mask');
   const markup = form.get('markup');

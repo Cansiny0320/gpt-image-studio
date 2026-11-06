@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from './ui/button';
-import { Controls, normalizeSettings } from './controls';
+import { Controls, normalizeSettings, compatibleGuides } from './controls';
 import { History } from './history';
 import { TurnstileWidget } from './turnstile';
 import { LocalImage } from './image';
@@ -105,10 +105,15 @@ export function Studio() {
       setError('请先上传参考图');
       return;
     }
+    const guides = compatibleGuides(parsed.data, { mask, markup });
+    const uploads = [
+      ...files,
+      ...(guides.mask ? [guides.mask] : []),
+      ...(guides.markup ? [guides.markup] : []),
+    ];
     if (
-      files.some((file) => file.size > 10 * 1024 * 1024) ||
-      [...files, ...(mask ? [mask] : []), ...(markup ? [markup] : [])].reduce((n, f) => n + f.size, 0) >
-        23 * 1024 * 1024
+      uploads.some((file) => file.size > 10 * 1024 * 1024) ||
+      uploads.reduce((n, f) => n + f.size, 0) > 23 * 1024 * 1024
     ) {
       setError('单张参考图不能超过 10 MB，总上传大小请控制在 23 MB 内');
       return;
@@ -140,8 +145,8 @@ export function Studio() {
     );
     if (snapshot.mode === 'edit') {
       files.forEach((file) => form.append('image', file));
-      if (mask) form.set('mask', mask);
-      if (markup) form.set('markup', markup);
+      if (guides.mask) form.set('mask', guides.mask);
+      if (guides.markup) form.set('markup', guides.markup);
     }
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {

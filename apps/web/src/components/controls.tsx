@@ -76,6 +76,10 @@ export function normalizeSettings(s: Settings): Settings {
     if (['xhigh', 'max'].includes(result.quality)) result.quality = 'auto';
     if (['svg', 'gif'].includes(result.output_format)) result.output_format = 'png';
   }
+  if (!caps.gif && s.output_format === 'gif') {
+    result.output_format = 'png';
+    result.size = 'auto';
+  }
   if (!caps.customSize && !standardSizes.some((size) => size === result.size)) result.size = '1024x1024';
   if (s.mode !== 'edit' || !caps.fidelity) delete result.input_fidelity;
   if (!caps.highFidelity && result.input_fidelity === 'high') result.input_fidelity = 'low';
@@ -91,11 +95,29 @@ export function normalizeSettings(s: Settings): Settings {
     delete result.frame_duration_ms;
   }
   if (!['jpeg', 'webp'].includes(result.output_format)) delete result.output_compression;
-  if (!['png', 'webp', 'svg'].includes(result.output_format) && result.background === 'transparent')
+  if (!['png', 'webp'].includes(result.output_format) && result.background === 'transparent')
     result.background = 'opaque';
   if (!result.stream) result.partial_images = 0;
   return result;
 }
+export function applySettingsPatch(current: Settings, patch: Partial<Settings>): Settings {
+  const next = { ...current, ...patch };
+  if (
+    patch.output_format &&
+    patch.output_format !== current.output_format &&
+    (patch.output_format === 'gif' || current.output_format === 'gif')
+  )
+    next.size = 'auto';
+  return normalizeSettings(next);
+}
+
+export function compatibleGuides(settings: Settings, guides: { mask?: File; markup?: File }) {
+  return {
+    mask: settings.mode === 'edit' && settings.output_format !== 'gif' ? guides.mask : undefined,
+    markup: settings.mode === 'edit' && capabilities(settings.model).advanced ? guides.markup : undefined,
+  };
+}
+
 export function Controls({
   settings: s,
   disabled = false,
@@ -119,13 +141,23 @@ export function Controls({
   markup?: File;
   setMarkup: (file?: File) => void;
 }) {
-  const update = (patch: Partial<Settings>) => onChange(normalizeSettings({ ...s, ...patch }));
+  const update = (patch: Partial<Settings>) => {
+    const next = applySettingsPatch(s, patch);
+    const guides = compatibleGuides(next, { mask, markup });
+    setMask(guides.mask);
+    setMarkup(guides.markup);
+    onChange(next);
+  };
   const caps = capabilities(s.model);
-  const formatValues =
-    previewFormats && caps.advanced
-      ? ['png', 'jpeg', 'webp', 'gif', ...(s.mode === 'generate' ? ['svg'] : [])]
-      : ['png', 'jpeg', 'webp'];
-  const custom = !standardSizes.some((size) => size === s.size);
+  const formatValues = [
+    'png',
+    'jpeg',
+    'webp',
+    ...(caps.gif ? ['gif'] : []),
+    ...(previewFormats && caps.advanced && s.mode === 'generate' ? ['svg'] : []),
+  ];
+  const sizeValues = s.output_format === 'gif' ? ['auto'] : standardSizes;
+  const custom = !sizeValues.some((size) => size === s.size);
   const [width, height] = s.size.split('x');
   return (
     <ControlsDisabled.Provider value={disabled}>
@@ -176,7 +208,7 @@ export function Controls({
           <Field label="画幅">
             <Select
               value={custom ? 'custom' : s.size}
-              values={[...standardSizes, ...(caps.customSize ? ['custom'] : [])]}
+              values={[...sizeValues, ...(caps.customSize ? ['custom'] : [])]}
               label={{
                 auto: '自动',
                 '1024x1024': '方形 · 1:1',
@@ -184,14 +216,23 @@ export function Controls({
                 '1024x1536': '纵向 · 2:3',
                 custom: '自定义尺寸',
               }}
-              onChange={(v) => update({ size: v === 'custom' ? '1536x864' : v })}
+              onChange={(v) =>
+                update({ size: v === 'custom' ? (s.output_format === 'gif' ? '512x512' : '1536x864') : v })
+              }
             />
           </Field>
           <Field label="质量">
             <Select
               value={s.quality}
               values={['auto', 'low', 'medium', 'high', ...(caps.advanced ? ['xhigh', 'max'] : [])]}
-              label={{ auto: '自动', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高' }}
+              label={{
+                auto: '自动',
+                low: '低',
+                medium: '中',
+                high: '高',
+                xhigh: '超高',
+                max: '最高',
+              }}
               onChange={(v) => update({ quality: v as Settings['quality'] })}
             />
           </Field>
@@ -230,7 +271,7 @@ export function Controls({
             <Select
               value={s.output_format}
               values={formatValues}
-              label={{ png: 'PNG', jpeg: 'JPEG', webp: 'WebP', gif: 'GIF · 预览', svg: 'SVG · 预览' }}
+              label={{ png: 'PNG', jpeg: 'JPEG', webp: 'WebP', gif: 'GIF', svg: 'SVG · 预览' }}
               onChange={(v) => update({ output_format: v as Settings['output_format'] })}
             />
           </Field>
@@ -248,7 +289,7 @@ export function Controls({
               values={[
                 'auto',
                 'opaque',
-                ...(['png', 'webp', 'svg'].includes(s.output_format) ? ['transparent'] : []),
+                ...(['png', 'webp'].includes(s.output_format) ? ['transparent'] : []),
               ]}
               label={{ auto: '自动', opaque: '不透明', transparent: '透明' }}
               onChange={(v) => update({ background: v as Settings['background'] })}
@@ -272,7 +313,9 @@ export function Controls({
                 values={['default', 'low', 'medium', 'high']}
                 label={{ default: '模型默认', low: '低', medium: '中', high: '高' }}
                 onChange={(v) =>
-                  update({ complexity: v === 'default' ? undefined : (v as Settings['complexity']) })
+                  update({
+                    complexity: v === 'default' ? undefined : (v as Settings['complexity']),
+                  })
                 }
               />
             </Field>
@@ -338,22 +381,30 @@ export function Controls({
                   value={s.svg?.model ?? ''}
                   placeholder="使用默认模型"
                   onChange={(e) =>
-                    update({ svg: e.target.value ? { ...s.svg, model: e.target.value } : undefined })
+                    update({
+                      svg: e.target.value ? { ...s.svg, model: e.target.value } : undefined,
+                    })
                   }
                 />
               </Field>
               {s.svg && (
                 <Field label="SVG 推理强度">
                   <Select
-                    value={s.svg.reasoning?.effort ?? 'medium'}
-                    values={['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']}
+                    value={s.svg.reasoning?.effort ?? 'default'}
+                    values={['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']}
+                    label={{ default: '模型默认' }}
                     onChange={(v) =>
                       update({
                         svg: {
                           model: s.svg!.model,
-                          reasoning: {
-                            effort: v as NonNullable<NonNullable<Settings['svg']>['reasoning']>['effort'],
-                          },
+                          reasoning:
+                            v === 'default'
+                              ? undefined
+                              : {
+                                  effort: v as NonNullable<
+                                    NonNullable<Settings['svg']>['reasoning']
+                                  >['effort'],
+                                },
                         },
                       })
                     }

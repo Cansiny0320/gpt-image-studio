@@ -18,8 +18,13 @@ export function upstreamBody(
   files: { images: File[]; mask?: File; markup?: File },
   safetyId: string,
 ) {
-  const { mode, prompt, ...options } = settings;
-  const params = { ...options, prompt, safety_identifier: safetyId };
+  const { mode, prompt, partial_images, ...options } = settings;
+  const params = {
+    ...options,
+    prompt,
+    safety_identifier: safetyId,
+    ...(settings.stream ? { partial_images } : {}),
+  };
   if (mode === 'generate') return JSON.stringify(params);
   const form = new FormData();
   for (const [key, value] of Object.entries(params)) {

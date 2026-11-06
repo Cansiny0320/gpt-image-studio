@@ -21,7 +21,13 @@ function form(mode: 'generate' | 'edit' = 'generate') {
     JSON.stringify({
       requestId: crypto.randomUUID(),
       turnstileToken: 'test-token',
-      settings: { ...defaultSettings, prompt: 'A blue cup', stream: false, partial_images: 0, mode },
+      settings: {
+        ...defaultSettings,
+        prompt: 'A blue cup',
+        stream: false,
+        partial_images: 0,
+        mode,
+      },
     }),
   );
   return value;
@@ -44,6 +50,79 @@ function upstream() {
   );
 }
 describe('API boundary', () => {
+  it.each(['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'])(
+    'accepts GIF without enabling SVG: %s',
+    async (model) => {
+      const body = form();
+      const payload = JSON.parse(body.get('payload') as string);
+      Object.assign(payload.settings, {
+        model,
+        output_format: 'gif',
+        frame_count: 9,
+        frame_duration_ms: 200,
+      });
+      body.set('payload', JSON.stringify(payload));
+      expect((await parseInput(request(body), false)).settings.output_format).toBe('gif');
+    },
+  );
+  it('rejects 2.5 GIF before contacting upstream services', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, { model: 'gpt-image-2.5-flare', output_format: 'gif' });
+    body.set('payload', JSON.stringify(payload));
+    const fetcher = upstream();
+    const a = archive();
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('2.6');
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(a.reserve).not.toHaveBeenCalled();
+  });
+  it('forwards GIF parameters and returns exact bytes with the correct format', async () => {
+    const gif = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, {
+      output_format: 'gif',
+      size: 'auto',
+      frame_count: 9,
+      frame_duration_ms: 200,
+    });
+    body.set('payload', JSON.stringify(payload));
+    const fetcher = vi.fn<typeof fetch>(async (url) =>
+      String(url).includes('siteverify')
+        ? Response.json({ success: true })
+        : Response.json({ data: [{ b64_json: gif }] }),
+    );
+    const a = archive();
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
+    const events = (await response.text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(events[0]).toMatchObject({ type: 'image', b64: gif, format: 'gif', archived: true });
+    expect(events[1]).toEqual({ type: 'done', count: 1 });
+    expect(JSON.parse(fetcher.mock.calls[1][1]?.body as string)).toMatchObject({
+      model: 'gpt-image-2.6-flare',
+      output_format: 'gif',
+      size: 'auto',
+      frame_count: 9,
+      frame_duration_ms: 200,
+    });
+    expect(a.save).toHaveBeenCalledWith(
+      expect.any(String),
+      0,
+      expect.objectContaining({ output_format: 'gif' }),
+      gif,
+    );
+  });
+  it('still rejects SVG when preview formats are disabled', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    payload.settings.output_format = 'svg';
+    body.set('payload', JSON.stringify(payload));
+    await expect(parseInput(request(body), false)).rejects.toThrow('SVG');
+  });
   it('rejects batches over three before verification, archival or generation', async () => {
     const body = form();
     const payload = JSON.parse(body.get('payload') as string);
@@ -60,7 +139,10 @@ describe('API boundary', () => {
   it('rejects another origin before verification, archival or generation', async () => {
     const fetcher = upstream();
     const a = archive();
-    const response = await handleApi(request(form(), 'https://other.test'), env, { fetcher, archive: a });
+    const response = await handleApi(request(form(), 'https://other.test'), env, {
+      fetcher,
+      archive: a,
+    });
     expect(response.status).toBe(403);
     expect(fetcher).not.toHaveBeenCalled();
     expect(a.reserve).not.toHaveBeenCalled();

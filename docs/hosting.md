@@ -55,7 +55,7 @@ pnpm dev
 | `vars.APP_ORIGIN`             | 完整 HTTPS origin，不带尾斜杠，须与域名一致                          |
 | `vars.APP_ENV`                | `production`                                                         |
 | `vars.TURNSTILE_SITE_KEY`     | 真实 Turnstile site key                                              |
-| `vars.ENABLE_PREVIEW_FORMATS` | 默认 `false`；仅在确认 API 项目有 SVG / GIF 权限后开启               |
+| `vars.ENABLE_PREVIEW_FORMATS` | 默认 `false`；仅控制 SVG，确认权限后开启；GIF 已对 2.6 模型开放      |
 
 在 `apps/web` 目录交互式设置 Secrets，不要把 key 写进命令参数、Git 或普通环境变量配置：
 

@@ -45,17 +45,17 @@ You need a Cloudflare account with Workers, D1, and R2 enabled, a domain managed
 3. Create a Managed Turnstile widget in the Cloudflare dashboard, allowing only your site's hostname. Keep the public site key and private secret key.
 4. Update `apps/web/wrangler.jsonc` using the table below. Keep R2 private, with public development URLs and custom domains disabled.
 
-| Configuration                 | Value                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------- |
-| `account_id`                  | Your Cloudflare account ID                                                  |
-| `name`                        | Your Worker name                                                            |
-| `routes[].pattern`            | Your domain; keep `custom_domain: true`                                     |
-| `d1_databases[]`              | Your database name and ID; keep `binding: DB` and `migrations_dir: drizzle` |
-| `r2_buckets[]`                | Your bucket name; keep `binding: IMAGES`                                    |
-| `vars.APP_ORIGIN`             | Your full HTTPS origin without a trailing slash, matching the domain        |
-| `vars.APP_ENV`                | `production`                                                                |
-| `vars.TURNSTILE_SITE_KEY`     | Your real Turnstile site key                                                |
-| `vars.ENABLE_PREVIEW_FORMATS` | Keep `false` unless you have verified SVG / GIF access for your API project |
+| Configuration                 | Value                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `account_id`                  | Your Cloudflare account ID                                                                  |
+| `name`                        | Your Worker name                                                                            |
+| `routes[].pattern`            | Your domain; keep `custom_domain: true`                                                     |
+| `d1_databases[]`              | Your database name and ID; keep `binding: DB` and `migrations_dir: drizzle`                 |
+| `r2_buckets[]`                | Your bucket name; keep `binding: IMAGES`                                                    |
+| `vars.APP_ORIGIN`             | Your full HTTPS origin without a trailing slash, matching the domain                        |
+| `vars.APP_ENV`                | `production`                                                                                |
+| `vars.TURNSTILE_SITE_KEY`     | Your real Turnstile site key                                                                |
+| `vars.ENABLE_PREVIEW_FORMATS` | Controls SVG only; keep `false` until SVG access is verified. GIF is enabled for 2.6 models |
 
 From `apps/web`, set secrets interactively. Do not put keys in command arguments, Git, or plain environment-variable configuration:
 
