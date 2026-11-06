@@ -44,6 +44,19 @@ function upstream() {
   );
 }
 describe('API boundary', () => {
+  it('rejects batches over three before verification, archival or generation', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    payload.settings.n = 4;
+    body.set('payload', JSON.stringify(payload));
+    const fetcher = upstream();
+    const a = archive();
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('最多生成 3 张');
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(a.reserve).not.toHaveBeenCalled();
+  });
   it('rejects another origin before verification, archival or generation', async () => {
     const fetcher = upstream();
     const a = archive();

@@ -50,9 +50,14 @@ export function TurnstileWidget({
           action: 'generate',
           theme: 'light',
           size: 'flexible',
-          callback: onToken,
-          'expired-callback': () => onToken(''),
+          callback: (token: string) => {
+            if (alive) onToken(token);
+          },
+          'expired-callback': () => {
+            if (alive) onToken('');
+          },
           'error-callback': () => {
+            if (!alive) return;
             onToken('');
             onError('人机验证失败，请重新验证');
           },

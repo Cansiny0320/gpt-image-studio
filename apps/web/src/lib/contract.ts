@@ -69,6 +69,12 @@ export const settingsSchema = z
     if (s.output_format !== 'gif' && (s.frame_count !== undefined || s.frame_duration_ms !== undefined))
       issue('frame_count', '帧配置仅用于 GIF');
   });
+export const MAX_IMAGES_PER_REQUEST = 3;
+// Keep the historical parameter schema readable for existing ZIP backups.
+export const generationSettingsSchema = settingsSchema.refine((s) => s.n <= MAX_IMAGES_PER_REQUEST, {
+  path: ['n'],
+  message: '一次最多生成 3 张图片',
+});
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaultSettings: Settings = {
   mode: 'generate',
@@ -84,7 +90,7 @@ export const defaultSettings: Settings = {
   partial_images: 1,
 };
 export const envelopeSchema = z.strictObject({
-  settings: settingsSchema,
+  settings: generationSettingsSchema,
   requestId: z.uuid(),
   turnstileToken: z.string().min(1).max(2048),
 });

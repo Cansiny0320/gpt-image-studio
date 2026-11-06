@@ -207,7 +207,7 @@ select {
 .field > span:first-child {
   color: #686f7b;
 }
-.field select,
+.field .select-trigger,
 .field input:not([type='range']):not([type='file']) {
   width: 100%;
   min-width: 0;
@@ -393,19 +393,6 @@ input[type='checkbox'] {
   background: #232937bd;
   color: white;
   font-size: 12px;
-}
-.storage-note {
-  padding: 17px 2px 0;
-  font-size: 11px;
-  line-height: 1.8;
-  color: #969da7;
-}
-.storage-note summary {
-  width: fit-content;
-}
-.storage-note p {
-  max-width: 640px;
-  margin: 6px 0 0;
 }
 .notice {
   padding: 10px 0;
@@ -689,5 +676,98 @@ input[type='checkbox'] {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+.header-brand {
+  min-width: 0;
+}
+.brand-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.github-link {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #626976;
+}
+.github-link:hover {
+  color: var(--primary);
+}
+.project-note {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.project-note a:hover {
+  color: var(--primary);
+}
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+.select-trigger > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-trigger > span:last-child {
+  display: flex;
+  flex-shrink: 0;
+}
+.select-trigger[data-popup-open] {
+  border-color: var(--primary);
+}
+.select-positioner {
+  z-index: 30;
+}
+.select-popup {
+  min-width: var(--anchor-width);
+  max-width: calc(100vw - 32px);
+  max-height: min(320px, var(--available-height));
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px #19233820;
+}
+.select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.select-item[data-highlighted] {
+  background: #edf0fb;
+  outline: none;
+}
+.select-item[data-selected] {
+  color: var(--primary);
+}
+@media (max-width: 760px) {
+  .app-header {
+    height: auto;
+    min-height: 96px;
+    padding: 14px 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .app-header nav {
+    margin-left: auto;
+    gap: 6px;
+  }
+  .app-header nav .button {
+    padding: 7px 9px;
   }
 }

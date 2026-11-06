@@ -7,6 +7,7 @@ import {
   ImagePlus,
   LoaderCircle,
   Pencil,
+  Plus,
   RotateCcw,
   Square,
   X,
@@ -16,8 +17,9 @@ import { Controls, normalizeSettings } from './controls';
 import { History } from './history';
 import { TurnstileWidget } from './turnstile';
 import { LocalImage } from './image';
+import { turnstileSession } from '../lib/turnstile-session';
 import { useStudio } from '../lib/store';
-import { settingsSchema, outputEventSchema, type Settings } from '../lib/contract';
+import { defaultSettings, generationSettingsSchema, outputEventSchema, type Settings } from '../lib/contract';
 import { client } from '../lib/rpc';
 import { mimeTypes } from '../lib/models';
 import { saveArtwork, downloadBlob, type Artwork } from '../lib/history';
@@ -33,7 +35,7 @@ export function Studio() {
   const [config, setConfig] = useState<Awaited<ReturnType<typeof client.config>>>();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState(() => turnstileSession.read());
   const [challenge, setChallenge] = useState(0);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -47,7 +49,18 @@ export function Studio() {
   const [revision, setRevision] = useState(0);
   const [unsaved, setUnsaved] = useState<Artwork[]>([]);
   const controller = useRef<AbortController | null>(null);
-  const onToken = useCallback((next: string) => setToken(next), []);
+  const onToken = useCallback((next: string) => {
+    turnstileSession.save(next);
+    setToken(next);
+  }, []);
+  useEffect(() => {
+    if (!token) return;
+    const timeout = setTimeout(() => {
+      turnstileSession.clear();
+      setToken('');
+    }, turnstileSession.remaining());
+    return () => clearTimeout(timeout);
+  }, [token]);
   const onChallengeError = useCallback((message: string) => setError(message), []);
   useEffect(() => {
     void client
@@ -79,7 +92,7 @@ export function Studio() {
   };
   const generate = async () => {
     if (controller.current || busy) return;
-    const parsed = settingsSchema.safeParse(settings);
+    const parsed = generationSettingsSchema.safeParse(settings);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? '请检查参数');
       return;
@@ -104,6 +117,12 @@ export function Studio() {
       setError('还有图片未保存，请先重试保存，或下载后确认继续');
       return;
     }
+    const verifiedToken = turnstileSession.consume();
+    setToken('');
+    if (!verifiedToken) {
+      setError('验证已过期，请重新验证');
+      return;
+    }
     const snapshot = parsed.data;
     const abort = new AbortController();
     controller.current = abort;
@@ -117,7 +136,7 @@ export function Studio() {
     const form = new FormData();
     form.set(
       'payload',
-      JSON.stringify({ settings: snapshot, requestId: crypto.randomUUID(), turnstileToken: token }),
+      JSON.stringify({ settings: snapshot, requestId: crypto.randomUUID(), turnstileToken: verifiedToken }),
     );
     if (snapshot.mode === 'edit') {
       files.forEach((file) => form.append('image', file));
@@ -208,13 +227,53 @@ export function Studio() {
     setMarkup(undefined);
     document.getElementById('prompt')?.focus();
   };
+  const startNew = () => {
+    if (busy) return;
+    if (unsaved.length) {
+      setError('还有图片未保存，请先重试保存，或下载后确认继续');
+      return;
+    }
+    restore({ ...defaultSettings });
+    setFiles([]);
+    setMask(undefined);
+    setMarkup(undefined);
+    setResults([]);
+    setSelected(undefined);
+    setPreview(undefined);
+    setError('');
+    setNotice('');
+    document.getElementById('prompt')?.focus();
+  };
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/" className="wordmark">
-          Image Studio<span>GPT</span>
-        </Link>
-        <nav>
+        <div className="header-brand">
+          <div className="brand-links">
+            <Link to="/" className="wordmark">
+              Image Studio<span>GPT</span>
+            </Link>
+            <a
+              href="https://github.com/Cansiny0320/gpt-image-studio"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="GitHub 仓库"
+              title="GitHub 仓库"
+              className="github-link"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
+                <path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.105.77-.244.77-.542 0-.267-.01-.975-.015-1.914-3.13.68-3.79-1.509-3.79-1.509-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.005 1.723 2.636 1.225 3.278.937.103-.728.393-1.225.715-1.507-2.499-.284-5.126-1.25-5.126-5.563 0-1.229.44-2.233 1.16-3.02-.116-.284-.503-1.429.11-2.978 0 0 .945-.302 3.094 1.154A10.79 10.79 0 0 1 12 6.191a10.8 10.8 0 0 1 2.818.379c2.148-1.456 3.091-1.154 3.091-1.154.615 1.549.228 2.694.112 2.978.722.787 1.159 1.791 1.159 3.02 0 4.324-2.631 5.276-5.138 5.555.404.349.765 1.039.765 2.094 0 1.512-.014 2.732-.014 3.103 0 .301.203.653.774.542A11.25 11.25 0 0 0 12 .75Z" />
+              </svg>
+            </a>
+          </div>
+          <p className="project-note">
+            免费开源，请勿付费购买 · <Link to="/sponsor">欢迎赞赏</Link>
+          </p>
+        </div>
+        <nav aria-label="主导航">
+          <Button variant="ghost" disabled={busy} onClick={startNew}>
+            <Plus size={17} />
+            新建
+          </Button>
           <Link to="/sponsor" className="nav-link">
             赞赏
             <ArrowUpRight size={14} />
@@ -261,6 +320,7 @@ export function Studio() {
             />
             <Controls
               settings={settings}
+              disabled={busy}
               onChange={restore}
               previewFormats={config?.previewFormats ?? false}
               files={files}
@@ -272,7 +332,7 @@ export function Studio() {
             />
           </fieldset>
           <div className="generate-area">
-            {config?.siteKey && (
+            {config?.siteKey && !token && !busy && (
               <TurnstileWidget
                 siteKey={config.siteKey}
                 refresh={challenge}
@@ -420,12 +480,6 @@ export function Studio() {
               )}
             </output>
           )}
-          <details className="storage-note">
-            <summary>关于保存与隐私</summary>
-            <p>
-              提示词和最终图片保存在当前浏览器，同时在服务端留档；历史浏览只读取本地。参考图和中间预览不留存。清理网站数据前请导出备份；删除本地记录不会删除服务端留档。
-            </p>
-          </details>
         </section>
       </main>
       <History
@@ -435,7 +489,12 @@ export function Studio() {
         onSelect={(art) => {
           setSelected(art);
           setPreview(undefined);
-          restore(art.settings);
+          restore(normalizeSettings(art.settings));
+          setResults([]);
+          setFiles([]);
+          setMask(undefined);
+          setMarkup(undefined);
+          setError('');
         }}
       />
     </div>

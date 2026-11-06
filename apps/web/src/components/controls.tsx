@@ -1,16 +1,23 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
+import { Select as BaseSelect } from '@base-ui/react/select';
+import { MAX_IMAGES_PER_REQUEST } from '../lib/contract';
 import type { Settings } from '../lib/contract';
 import { capabilities, models, standardSizes, type ImageModel } from '../lib/models';
 import { LocalImage } from './image';
-import { X, Plus, SlidersHorizontal } from 'lucide-react';
+import { X, Plus, SlidersHorizontal, ChevronDown, Check } from 'lucide-react';
 import { Button } from './ui/button';
+
+const FieldLabel = createContext('');
+const ControlsDisabled = createContext(false);
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
+    <FieldLabel.Provider value={label}>
+      <label className="field">
+        <span>{label}</span>
+        {children}
+      </label>
+    </FieldLabel.Provider>
   );
 }
 export function Select({
@@ -24,18 +31,45 @@ export function Select({
   values: readonly string[];
   label?: Record<string, string>;
 }) {
+  const accessibleLabel = useContext(FieldLabel);
+  const disabled = useContext(ControlsDisabled);
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)}>
-      {values.map((item) => (
-        <option key={item} value={item}>
-          {label?.[item] ?? item}
-        </option>
-      ))}
-    </select>
+    <BaseSelect.Root
+      value={value}
+      disabled={disabled}
+      items={values.map((item) => ({ value: item, label: label?.[item] ?? item }))}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next);
+      }}
+    >
+      <BaseSelect.Trigger className="select-trigger" aria-label={accessibleLabel}>
+        <BaseSelect.Value />
+        <BaseSelect.Icon>
+          <ChevronDown size={14} />
+        </BaseSelect.Icon>
+      </BaseSelect.Trigger>
+      <BaseSelect.Portal>
+        <BaseSelect.Positioner className="select-positioner" sideOffset={5} alignItemWithTrigger={false}>
+          <BaseSelect.Popup className="select-popup">
+            <BaseSelect.List>
+              {values.map((item) => (
+                <BaseSelect.Item key={item} value={item} className="select-item">
+                  <BaseSelect.ItemText>{label?.[item] ?? item}</BaseSelect.ItemText>
+                  <BaseSelect.ItemIndicator>
+                    <Check size={14} />
+                  </BaseSelect.ItemIndicator>
+                </BaseSelect.Item>
+              ))}
+            </BaseSelect.List>
+          </BaseSelect.Popup>
+        </BaseSelect.Positioner>
+      </BaseSelect.Portal>
+    </BaseSelect.Root>
   );
 }
+
 export function normalizeSettings(s: Settings): Settings {
-  const result = { ...s };
+  const result = { ...s, n: Math.min(s.n, MAX_IMAGES_PER_REQUEST) };
   const caps = capabilities(s.model);
   if (!caps.advanced) {
     delete result.complexity;
@@ -64,6 +98,7 @@ export function normalizeSettings(s: Settings): Settings {
 }
 export function Controls({
   settings: s,
+  disabled = false,
   onChange,
   previewFormats,
   files,
@@ -74,6 +109,7 @@ export function Controls({
   setMarkup,
 }: {
   settings: Settings;
+  disabled?: boolean;
   onChange: (next: Settings) => void;
   previewFormats: boolean;
   files: File[];
@@ -92,7 +128,7 @@ export function Controls({
   const custom = !standardSizes.some((size) => size === s.size);
   const [width, height] = s.size.split('x');
   return (
-    <>
+    <ControlsDisabled.Provider value={disabled}>
       {s.mode === 'edit' && (
         <div className="references">
           <div className="field-caption">
@@ -182,12 +218,12 @@ export function Controls({
         )}
         <div className="field-pair">
           <Field label="图片数量">
-            <input
-              type="number"
-              min={1}
-              max={s.output_format === 'svg' ? 1 : 10}
-              value={s.n}
-              onChange={(e) => update({ n: Number(e.target.value) })}
+            <Select
+              value={String(s.n)}
+              values={Array.from({ length: s.output_format === 'svg' ? 1 : MAX_IMAGES_PER_REQUEST }, (_, i) =>
+                String(i + 1),
+              )}
+              onChange={(value) => update({ n: Number(value) })}
             />
           </Field>
           <Field label="格式">
@@ -382,6 +418,6 @@ export function Controls({
           )}
         </div>
       </details>
-    </>
+    </ControlsDisabled.Provider>
   );
 }

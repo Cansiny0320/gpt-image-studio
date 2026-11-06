@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { settingsSchema, defaultSettings } from './contract';
+import { settingsSchema, generationSettingsSchema, defaultSettings } from './contract';
 
 describe('image parameter contract', () => {
   const valid = { ...defaultSettings, prompt: 'A blue ceramic vase' };
@@ -45,4 +45,19 @@ describe('image parameter contract', () => {
         partial_images: 0,
       }).success,
     ).toBe(false));
+});
+
+describe('site generation limit', () => {
+  it('accepts three images and rejects four for both modes', () => {
+    for (const mode of ['generate', 'edit']) {
+      const settings = { ...defaultSettings, prompt: 'An orange cat', mode };
+      expect(generationSettingsSchema.safeParse({ ...settings, n: 3 }).success).toBe(true);
+      expect(generationSettingsSchema.safeParse({ ...settings, n: 4 }).success).toBe(false);
+    }
+  });
+  it('still accepts historical settings from batches larger than three', () => {
+    expect(settingsSchema.safeParse({ ...defaultSettings, prompt: 'An old image', n: 10 }).success).toBe(
+      true,
+    );
+  });
 });
