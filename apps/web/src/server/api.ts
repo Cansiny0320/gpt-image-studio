@@ -5,8 +5,9 @@ import { createArchive, type Archive } from './archive';
 import { assertOrigin } from './security';
 import { parseInput } from './input';
 import { imageEvents, openImageRequest } from './openai';
-import { PublicError, safeError } from './errors';
+import { imageAbortReason, ImageResponseError, imageTimeoutMessage, PublicError, safeError } from './errors';
 import { imageTransport, type TransportEnvironment } from './transport';
+import { upstreamRequestId } from './upstream-error';
 
 export const router = {
   config: os.$context<{ env: Env }>().handler(({ context }) => ({
@@ -32,12 +33,13 @@ export async function handleApi(
   if (path !== '/api/generate') return new Response('Not found', { status: 404, headers });
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers });
   const controller = new AbortController();
-  const abort = () => controller.abort();
-  request.signal.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(abort, 240000);
+  const onDisconnect = () => controller.abort('client_disconnected');
+  if (request.signal.aborted) onDisconnect();
+  else request.signal.addEventListener('abort', onDisconnect, { once: true });
+  const timer = setTimeout(() => controller.abort('timeout'), 240000);
   const cleanup = () => {
     clearTimeout(timer);
-    request.signal.removeEventListener('abort', abort);
+    request.signal.removeEventListener('abort', onDisconnect);
   };
   let requestId: string | undefined;
   let archive: Archive | undefined;
@@ -66,30 +68,63 @@ export async function handleApi(
       transport,
     );
     const events = imageEvents(upstream, input.settings, requestId, archive);
+    const providerId = upstreamRequestId(upstream);
+    const logResponseFailure = (error?: unknown) => {
+      const diagnostic = error instanceof ImageResponseError ? error.diagnostic : undefined;
+      console.error({
+        event: 'image_request_error',
+        phase: 'upstream_response',
+        requestId: input.requestId,
+        upstreamRequestId: providerId,
+        transport: transport?.name ?? 'direct',
+        model: input.settings.model,
+        format: input.settings.output_format,
+        stream: input.settings.stream,
+        status: upstream.status,
+        ...diagnostic,
+        reason: imageAbortReason(controller.signal) ?? diagnostic?.reason ?? 'upstream_body_read_failed',
+      });
+    };
     const encoder = new TextEncoder();
     const activeArchive = archive;
     const activeId = requestId;
+    let cancelled = false;
+    let settled = false;
     const stream = new ReadableStream<Uint8Array>({
       async pull(sink) {
         try {
           const result = await events.next();
+          if (result.done || result.value.type === 'done') settled = true;
+          if (cancelled) return;
           if (result.done) {
             cleanup();
             sink.close();
           } else sink.enqueue(encoder.encode(JSON.stringify(result.value) + '\n'));
         } catch (error) {
+          if (cancelled) return;
+          settled = true;
+          logResponseFailure(error);
+          const message =
+            imageAbortReason(controller.signal) === 'timeout'
+              ? imageTimeoutMessage
+              : safeError(error, '接收图片时连接中断了。请稍后再试。');
           await activeArchive.finish(activeId, 'failed').catch(() => {});
-          sink.enqueue(encoder.encode(JSON.stringify({ type: 'error', message: safeError(error) }) + '\n'));
           cleanup();
           controller.abort();
+          if (cancelled) return;
+          sink.enqueue(encoder.encode(JSON.stringify({ type: 'error', message }) + '\n'));
           sink.close();
         }
       },
       async cancel() {
-        controller.abort();
+        cancelled = true;
+        onDisconnect();
         cleanup();
-        await events.return(undefined);
-        await activeArchive.finish(activeId, 'disconnected').catch(() => {});
+        await events.return(undefined).catch(() => {});
+        if (!settled) {
+          logResponseFailure();
+          await activeArchive.finish(activeId, 'disconnected').catch(() => {});
+        }
       },
     });
     return new Response(stream, {

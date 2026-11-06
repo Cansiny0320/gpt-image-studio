@@ -68,7 +68,7 @@ describe('upstream response and archival', () => {
         /* consume */
       }
     };
-    await expect(collect()).rejects.toThrow('0 / 1');
+    await expect(collect()).rejects.toThrow('这次没有收到完整图片');
   });
   it('parses multiple JSON images across network chunks', async () => {
     const out = [];
@@ -92,7 +92,7 @@ describe('upstream response and archival', () => {
         new AbortController().signal,
         fetcher,
       ),
-    ).rejects.toThrow('额度不足');
+    ).rejects.toThrow('图片服务暂时无法接收更多请求');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('reports region restrictions without exposing upstream details', async () => {
@@ -119,7 +119,7 @@ describe('upstream response and archival', () => {
           fetcher,
           { requestId: 'job', colo: 'SEA' },
         ),
-      ).rejects.toThrow('上游生图服务拒绝了当前请求来源地区');
+      ).rejects.toThrow('图片服务暂时无法处理来自当前地区的请求');
       expect(fetcher).toHaveBeenCalledTimes(1);
       expect(logger).toHaveBeenCalledWith(
         expect.objectContaining({

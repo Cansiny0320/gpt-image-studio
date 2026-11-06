@@ -260,17 +260,149 @@ describe('API boundary', () => {
     body.set('payload', JSON.stringify(payload));
     const a = archive();
     const fetcher = vi.fn<typeof fetch>(async () => {
-      throw new TypeError('network failure');
+      throw new TypeError(payload.settings.prompt);
     });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await handleApi(request(body), env, { fetcher, archive: a });
 
-    const response = await handleApi(request(body), env, { fetcher, archive: a });
-
-    expect(response.status).toBe(503);
-    expect(a.reserve).toHaveBeenCalledWith(payload.requestId, payload.settings);
-    expect(a.reserve).toHaveBeenCalledBefore(fetcher);
-    expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
-    expect(a.save).not.toHaveBeenCalled();
+      expect(response.status).toBe(503);
+      expect(a.reserve).toHaveBeenCalledWith(payload.requestId, payload.settings);
+      expect(a.reserve).toHaveBeenCalledBefore(fetcher);
+      expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
+      expect(a.save).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          requestId: payload.requestId,
+          phase: 'upstream_request',
+          reason: 'upstream_fetch_failed',
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(payload.settings.prompt);
+    } finally {
+      log.mockRestore();
+    }
   });
+  it.each([
+    [
+      'data: {"type":"error","error":{"code":"moderation_blocked","message":"A blue cup"}}\n\n',
+      { reason: 'upstream_error_event', code: 'moderation_blocked' },
+    ],
+    [
+      'data: {"type":"error","code":"A blue cup","message":"A blue cup"}\n\n',
+      { reason: 'upstream_error_event', code: 'unknown' },
+    ],
+    ['data: A blue cup\n\n', { reason: 'invalid_sse_json' }],
+    [
+      'data: {"type":"image_generation.partial_image","b64_json":"YQ=="}\n\n',
+      { reason: 'incomplete_image_response', receivedImages: 0, expectedImages: 1 },
+    ],
+  ])('logs a sanitized reason when an upstream stream fails (%j)', async (sse, diagnostic) => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, { stream: true, partial_images: 1 });
+    body.set('payload', JSON.stringify(payload));
+    const a = archive();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await handleApi(request(body), env, {
+        archive: a,
+        fetcher: async () => new Response(sse, { headers: { 'x-request-id': 'req_stream' } }),
+      });
+
+      expect(await response.text()).toContain('"type":"error"');
+      expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          requestId: payload.requestId,
+          upstreamRequestId: 'req_stream',
+          phase: 'upstream_response',
+          ...diagnostic,
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(payload.settings.prompt);
+    } finally {
+      log.mockRestore();
+    }
+  });
+  it.each([
+    [false, 400, 'moderation_blocked', '这次生成未通过 OpenAI API 的内容审核。可以调整提示词后再试。'],
+    [true, 400, 'moderation_blocked', '这次生成未通过 OpenAI API 的内容审核。可以调整提示词后再试。'],
+    [false, 429, 'rate_limit_exceeded', '图片服务现在比较忙。请等一会儿再试。'],
+    [true, 429, 'rate_limit_exceeded', '图片服务现在比较忙。请等一会儿再试。'],
+    [false, 429, 'insufficient_quota', '图片服务的使用额度暂时不足。请联系站点维护者。'],
+  ])(
+    'explains an upstream rejection (stream: %s, status: %s, code: %s)',
+    async (stream, status, code, message) => {
+      const body = form();
+      const payload = JSON.parse(body.get('payload') as string);
+      Object.assign(payload.settings, { stream, partial_images: stream ? 1 : 0 });
+      body.set('payload', JSON.stringify(payload));
+      const error = { code, message: 'Raw upstream details' };
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const response = await handleApi(request(body), env, {
+          archive: archive(),
+          fetcher: async () =>
+            stream
+              ? new Response(`data: ${JSON.stringify({ type: 'error', error })}\n\n`)
+              : Response.json({ error }, { status }),
+        });
+
+        const result = JSON.parse(await response.text());
+        expect(stream ? result.message : result.error).toBe(message);
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+  it.each(['upstream_request', 'upstream_response'] as const)(
+    'logs the actual timeout phase (%s)',
+    async (phase) => {
+      const body = form();
+      const payload = JSON.parse(body.get('payload') as string);
+      const a = archive();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const ready = Promise.withResolvers<void>();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const pending = handleApi(request(body), env, {
+          archive: a,
+          fetcher: async (_url, init) => {
+            const signal = init!.signal!;
+            ready.resolve();
+            if (phase === 'upstream_request') {
+              return new Promise<Response>((_, reject) =>
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+              );
+            }
+            return new Response(
+              new ReadableStream({
+                start(sink) {
+                  signal.addEventListener('abort', () => sink.error(signal.reason), { once: true });
+                },
+              }),
+            );
+          },
+        });
+        await ready.promise;
+        const output = pending.then((response) => response.text());
+        await vi.advanceTimersByTimeAsync(240_000);
+        const result = JSON.parse(await output);
+
+        expect(phase === 'upstream_request' ? result.error : result.message).toBe(
+          '这次生成等待超时。请稍等片刻再试。',
+        );
+        expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ requestId: payload.requestId, phase, reason: 'timeout' }),
+        );
+      } finally {
+        vi.useRealTimers();
+        log.mockRestore();
+      }
+    },
+  );
   it('returns final bytes while retaining the key exclusively in the upstream header', async () => {
     const a = archive();
     const fetcher = upstream();

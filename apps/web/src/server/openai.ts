@@ -2,10 +2,23 @@ import { z } from 'zod';
 import { formats } from '../lib/models';
 import type { Settings, OutputEvent } from '../lib/contract';
 import type { Archive } from './archive';
-import { PublicError } from './errors';
+import {
+  imageAbortReason,
+  ImageResponseError,
+  imageTimeoutMessage,
+  PublicError,
+  unreadableImageMessage,
+} from './errors';
 import { readJSONImages, readSSE } from './stream';
-import { upstreamDiagnostic } from './upstream-error';
+import {
+  upstreamDiagnostic,
+  upstreamErrorCode,
+  upstreamErrorMessage,
+  upstreamRequestId,
+} from './upstream-error';
 import type { ImageTransport } from './transport';
+
+const missingImageMessage = '这次没有收到完整图片。请稍后再试。';
 
 const imageSchema = z.object({
   b64_json: z
@@ -51,45 +64,67 @@ export async function openImageRequest(
   context?: { requestId: string; colo?: string },
   transport?: ImageTransport,
 ) {
-  const response = await fetcher(
-    `${transport?.baseURL ?? 'https://api.openai.com/v1'}/images/${settings.mode === 'edit' ? 'edits' : 'generations'}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        ...transport?.headers,
-        ...(settings.mode === 'generate' ? { 'content-type': 'application/json' } : {}),
+  const logContext = {
+    transport: transport?.name ?? 'direct',
+    requestId: context?.requestId,
+    colo: context?.colo,
+    model: settings.model,
+    format: settings.output_format,
+    stream: settings.stream,
+  };
+  let response: Response;
+  try {
+    const body = upstreamBody(settings, files, safetyId);
+    signal.throwIfAborted();
+    response = await fetcher(
+      `${transport?.baseURL ?? 'https://api.openai.com/v1'}/images/${settings.mode === 'edit' ? 'edits' : 'generations'}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          ...transport?.headers,
+          ...(settings.mode === 'generate' ? { 'content-type': 'application/json' } : {}),
+        },
+        body,
+        signal,
+        redirect: 'manual',
       },
-      body: upstreamBody(settings, files, safetyId),
-      signal,
-      redirect: 'manual',
-    },
-  );
+    );
+  } catch (error) {
+    const abortReason = imageAbortReason(signal);
+    console.error({
+      ...logContext,
+      event: 'image_request_error',
+      phase: 'upstream_request',
+      reason: abortReason ?? 'upstream_fetch_failed',
+    });
+    if (abortReason === 'client_disconnected') throw error;
+    throw new PublicError(
+      abortReason === 'timeout' ? imageTimeoutMessage : '暂时连不上图片服务。请稍后再试。',
+      503,
+    );
+  }
   if (!response.ok) {
     const diagnostic = await upstreamDiagnostic(response);
     console.error({
+      ...logContext,
       event: 'image_upstream_error',
-      transport: transport?.name ?? 'direct',
+      phase: 'upstream_request',
       ...diagnostic,
-      requestId: context?.requestId,
-      colo: context?.colo,
-      model: settings.model,
-      format: settings.output_format,
-      stream: settings.stream,
     });
-    const message =
-      diagnostic.reason === 'region_restricted'
-        ? '上游生图服务拒绝了当前请求来源地区，请联系站点维护者。'
-        : response.status === 429
-          ? '生图服务额度不足或请求过于频繁，请稍后再试。'
-          : response.status === 401 || response.status === 403
-            ? '生图服务暂不可用，请联系站点维护者检查权限。'
-            : response.status === 400
-              ? '模型未接受这组参数或图片，请调整配置后重试。'
-              : '上游生图服务暂时不可用，请稍后重试。';
-    throw new PublicError(message, response.status === 429 ? 429 : 502);
+    throw new PublicError(upstreamErrorMessage(diagnostic), response.status === 429 ? 429 : 502);
   }
-  if (!response.body) throw new PublicError('上游未返回图片', 502);
+  if (!response.body) {
+    console.error({
+      ...logContext,
+      event: 'image_request_error',
+      phase: 'upstream_response',
+      reason: 'missing_response_body',
+      status: response.status,
+      upstreamRequestId: upstreamRequestId(response),
+    });
+    throw new PublicError(missingImageMessage, 502);
+  }
   return response;
 }
 export async function* imageEvents(
@@ -98,27 +133,39 @@ export async function* imageEvents(
   requestId: string,
   archive: Archive,
 ): AsyncGenerator<OutputEvent> {
-  if (!response.body) throw new PublicError('上游未返回图片', 502);
+  if (!response.body) throw new PublicError(missingImageMessage, 502);
   const events = settings.stream ? readSSE(response.body) : readJSONImages(response.body);
   let count = 0;
   let archiveFailed = false;
   for await (const value of events) {
     if (typeof value !== 'object' || value === null) continue;
     const event = value as Record<string, unknown>;
-    if (event.type === 'error' || event.error)
-      throw new PublicError('生图未完成，请调整提示词或配置后重试。', 502);
+    if (event.type === 'error' || event.error) {
+      const detail = event.error && typeof event.error === 'object' ? event.error : event;
+      const code = upstreamErrorCode('code' in detail ? detail.code : undefined);
+      throw new ImageResponseError(upstreamErrorMessage({ code }), {
+        reason: 'upstream_error_event',
+        code,
+      });
+    }
     const partial =
       settings.stream && typeof event.type === 'string' && event.type.endsWith('.partial_image');
     const final = !settings.stream || (typeof event.type === 'string' && event.type.endsWith('.completed'));
     if (!partial && !final) continue;
     const parsed = imageSchema.safeParse(event);
-    if (!parsed.success) throw new PublicError('上游返回的图片格式无效', 502);
+    if (!parsed.success)
+      throw new ImageResponseError(unreadableImageMessage, { reason: 'invalid_image_payload' });
     const format = parsed.data.output_format ?? settings.output_format;
     if (partial) {
       yield { type: 'preview', b64: parsed.data.b64_json, format };
       continue;
     }
-    if (count >= settings.n) throw new PublicError('上游返回图片数量异常', 502);
+    if (count >= settings.n)
+      throw new ImageResponseError('图片服务返回了多余的图片。已收到的图片可以保存。', {
+        reason: 'unexpected_image_count',
+        receivedImages: count + 1,
+        expectedImages: settings.n,
+      });
     const id = `${requestId}-${count}`;
     let archived = true;
     try {
@@ -131,7 +178,14 @@ export async function* imageEvents(
     count++;
   }
   if (count !== settings.n)
-    throw new PublicError(`仅收到 ${count} / ${settings.n} 张图片，已收到的图片可以保存。`, 502);
+    throw new ImageResponseError(
+      count ? `收到 ${count} 张图片，共请求 ${settings.n} 张。已收到的图片可以保存。` : missingImageMessage,
+      {
+        reason: 'incomplete_image_response',
+        receivedImages: count,
+        expectedImages: settings.n,
+      },
+    );
   await archive.finish(requestId, archiveFailed ? 'archive_failed' : 'complete').catch(() => {});
   yield { type: 'done', count };
 }

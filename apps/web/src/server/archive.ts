@@ -15,10 +15,10 @@ export function createArchive(env: Pick<Env, 'DB' | 'IMAGES'>): Archive {
   const db = drizzle(env.DB);
   return {
     async reserve(id, settings) {
-      const { prompt: _prompt, ...selectedSettings } = settings;
+      const { prompt, ...selectedSettings } = settings;
       const rows = await db
         .insert(requests)
-        .values({ id, createdAt: Date.now(), status: 'started', settings: selectedSettings })
+        .values({ id, createdAt: Date.now(), status: 'started', prompt, settings: selectedSettings })
         .onConflictDoNothing()
         .returning({ id: requests.id });
       return rows.length === 1;
@@ -33,16 +33,13 @@ export function createArchive(env: Pick<Env, 'DB' | 'IMAGES'>): Archive {
         httpMetadata: { contentType: mimeTypes[settings.output_format] },
       });
       try {
-        await db.batch([
-          db.update(requests).set({ prompt: settings.prompt }).where(eq(requests.id, requestId)),
-          db.insert(images).values({
-            id,
-            requestId,
-            objectKey,
-            mime: mimeTypes[settings.output_format],
-            bytes: bytes.length,
-          }),
-        ]);
+        await db.insert(images).values({
+          id,
+          requestId,
+          objectKey,
+          mime: mimeTypes[settings.output_format],
+          bytes: bytes.length,
+        });
       } catch (error) {
         // Do not leave an unassociated image in the private archive on metadata failure.
         await env.IMAGES.delete(objectKey).catch(() => {});
