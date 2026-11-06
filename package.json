@@ -12,6 +12,6 @@
     "typecheck": "pnpm --filter @studio/web typecheck",
     "verify": "pnpm --filter @studio/web verify",
     "db:local": "pnpm --filter @studio/web db:local",
-    "deploy": "pnpm build && pnpm --filter @studio/web deploy"
+    "deploy": "pnpm build && pnpm --filter @studio/web run deploy"
   }
 }
