@@ -240,7 +240,7 @@ export function Studio() {
             </a>
           </div>
           <p className="project-note">
-            免费开源，请勿付费购买 · <Link to="/guide">使用指南</Link>
+            免费开源，请勿付费购买 · <Link to="/sponsor">欢迎赞赏</Link>
           </p>
         </div>
         <nav aria-label="主导航">
@@ -333,6 +333,9 @@ export function Studio() {
                 </Button>
               )}
             </div>
+            <Link to="/guide" className="nav-link mt-2 py-1">
+              使用指南
+            </Link>
           </div>
         </section>
         <section className="output" aria-label="生成结果">
