@@ -4,7 +4,25 @@
 
 ## Local development
 
-Install dependencies and copy `.dev.vars.example` as described in the README, then set `OPENAI_API_KEY`. Local configuration uses `APP_ENV=development`, `APP_ORIGIN=http://127.0.0.1:4327`, and official Turnstile test keys. Test keys are accepted only in development on localhost.
+You need Node.js 24.11+, pnpm 10, and an OpenAI API key with access to the image models you want to use.
+
+```bash
+git clone https://github.com/Cansiny0320/gpt-image-studio.git
+cd gpt-image-studio
+pnpm install --frozen-lockfile
+cp apps/web/.dev.vars.example apps/web/.dev.vars
+```
+
+Set `OPENAI_API_KEY` in `apps/web/.dev.vars`, then start the app:
+
+```bash
+pnpm db:local
+pnpm dev
+```
+
+Open [127.0.0.1:4327](http://127.0.0.1:4327). Local development uses emulated D1 / R2 and official Turnstile test keys; it does not write to production storage.
+
+Local configuration uses `APP_ENV=development`, `APP_ORIGIN=http://127.0.0.1:4327`, and official Turnstile test keys. Test keys are accepted only in development on localhost.
 
 `pnpm db:local` applies local migrations; `pnpm dev` starts the development server. Local D1 / R2 data lives in `apps/web/.wrangler`. Real image generation still calls the OpenAI API and incurs API usage.
 
@@ -68,3 +86,11 @@ Production disables workers.dev and preview URLs. Missing required configuration
 To roll back code, use Worker version rollback in the Cloudflare dashboard. This does not roll back the D1 schema, delete archives, or restore browser data. Check compatibility before rolling back a version that depends on schema changes.
 
 See [usage notes](usage.en.md) for storage behavior and upload limits. [Local verification](verification.md) and [deployment verification](deployment-verification.md) are recorded in Chinese.
+
+## Stack and design
+
+Built with TypeScript, React 19, TanStack Start / Router, Tailwind CSS v4, Base UI / shadcn, Zustand, oRPC, Drizzle, and Cloudflare Workers / D1 / R2, using pnpm workspaces and Vite+.
+
+Run `pnpm test` for tests, `pnpm build` to build, and `pnpm verify` for lint, formatting checks, type checking, tests, and a build. Run `pnpm build` once before your first verification to generate route types.
+
+The interface takes inspiration from [GPT Image Playground](https://github.com/CookSleep/gpt_image_playground); the implementation is independently written. The [spec](spec.md) and [plan](plan.md) document the design and implementation in Chinese.

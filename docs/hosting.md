@@ -4,7 +4,25 @@
 
 ## 本地开发
 
-按 README 安装依赖并复制 `.dev.vars.example`，填写 `OPENAI_API_KEY`。本地配置为 `APP_ENV=development`、`APP_ORIGIN=http://127.0.0.1:4327`，使用 Turnstile 官方测试 key。测试 key 只允许在 development + localhost 环境使用。
+需要 Node.js 24.11+、pnpm 10，以及具有目标图片模型访问权限的 OpenAI API key。
+
+```bash
+git clone https://github.com/Cansiny0320/gpt-image-studio.git
+cd gpt-image-studio
+pnpm install --frozen-lockfile
+cp apps/web/.dev.vars.example apps/web/.dev.vars
+```
+
+在 `apps/web/.dev.vars` 中设置 `OPENAI_API_KEY`，然后启动：
+
+```bash
+pnpm db:local
+pnpm dev
+```
+
+打开 [127.0.0.1:4327](http://127.0.0.1:4327)。本地使用模拟 D1 / R2 和 Turnstile 官方测试 key，不写入线上存储。
+
+本地配置为 `APP_ENV=development`、`APP_ORIGIN=http://127.0.0.1:4327`，使用 Turnstile 官方测试 key。测试 key 只允许在 development + localhost 环境使用。
 
 `pnpm db:local` 应用本地迁移，`pnpm dev` 启动开发服务。本地 D1 / R2 数据位于 `apps/web/.wrangler`。真实生图仍会调用 OpenAI API 并产生相应使用量。
 
@@ -68,3 +86,11 @@ pnpm run deploy
 代码回滚可使用 Cloudflare 控制台的 Worker 版本回滚；它不会回滚 D1 schema、删除存档或恢复浏览器数据。涉及 schema 变更时，先确认旧版本兼容性。
 
 当前数据保存方式和上传限制见 [使用说明](usage.md)。首次本地检查和生产验收分别记录在 [本地验证](verification.md) 与 [上线验证](deployment-verification.md)。
+
+## 技术栈与设计
+
+使用 TypeScript、React 19、TanStack Start / Router、Tailwind CSS v4、Base UI / shadcn、Zustand、oRPC、Drizzle 和 Cloudflare Workers / D1 / R2，通过 pnpm workspace 与 Vite+ 构建。
+
+运行 `pnpm test` 执行测试，`pnpm build` 构建，`pnpm verify` 执行 lint、格式检查、类型检查、测试和构建。首次检查前先运行一次 `pnpm build`，生成路由类型。
+
+界面交互参考 [GPT Image Playground](https://github.com/CookSleep/gpt_image_playground)，实现独立编写。设计与实施记录见 [spec](spec.md) 和 [plan](plan.md)。

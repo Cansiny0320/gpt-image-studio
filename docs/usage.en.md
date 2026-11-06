@@ -4,6 +4,8 @@
 
 Enter a prompt and select generation settings in the [studio](https://image.cansiny.top). Image editing accepts reference images and a mask or markup PNG. Download the result or continue editing it. Images, prompts, and settings shown in history come from the current browser.
 
+The API key stays on the server. Image requests go through a Worker with server-side Turnstile verification. Available models and capabilities depend on the site's API project access.
+
 ## Storage and limits
 
 - Generate up to three images per request. SVG remains limited to one image.
