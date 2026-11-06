@@ -83,7 +83,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: #626976;
 }
 .nav-link:hover {
@@ -94,11 +94,11 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 40px;
   padding: 8px 13px;
   border-radius: 7px;
   border: 1px solid transparent;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   transition: background 0.15s;
@@ -125,8 +125,8 @@ button {
 }
 .button-icon {
   padding: 8px;
-  width: 34px;
-  min-height: 34px;
+  width: 40px;
+  min-height: 40px;
 }
 .workbench {
   display: grid;
@@ -148,10 +148,11 @@ button {
 }
 .mode-switch button {
   flex: 1;
+  min-height: 40px;
   padding: 9px;
   border: 0;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: #747b88;
   background: transparent;
 }
@@ -169,7 +170,7 @@ fieldset {
 }
 .prompt-label {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 550;
   margin-bottom: 10px;
 }
@@ -183,7 +184,7 @@ textarea {
   border: 1px solid #dfe3ea;
   border-radius: 8px;
   line-height: 1.75;
-  font-size: 13px;
+  font-size: 16px;
 }
 textarea::placeholder {
   color: #9a9fa9;
@@ -202,7 +203,7 @@ select {
   flex-direction: column;
   min-width: 0;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .field > span:first-child {
   color: #686f7b;
@@ -211,13 +212,15 @@ select {
 .field input:not([type='range']):not([type='file']) {
   width: 100%;
   min-width: 0;
-  height: 37px;
+  min-height: 42px;
   padding: 0 10px;
   border: 1px solid #dfe3ea;
   border-radius: 6px;
   background: #fff;
-  font-size: 12px;
   color: #323842;
+}
+.field input:not([type='range']):not([type='file']) {
+  font-size: 16px;
 }
 .field input[type='file'] {
   font-size: 11px;
@@ -240,7 +243,7 @@ select {
   align-items: center;
   gap: 8px;
   padding: 18px 0 5px;
-  font-size: 12px;
+  font-size: 14px;
   color: #626976;
 }
 .advanced > summary::after {
@@ -263,7 +266,7 @@ summary::-webkit-details-marker {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 14px;
   color: #686f7b;
 }
 input[type='checkbox'] {
@@ -280,8 +283,7 @@ input[type='checkbox'] {
 }
 .generate-button {
   flex: 1;
-  min-height: 43px;
-  font-size: 13px;
+  min-height: 46px;
 }
 .error {
   display: flex;
@@ -309,18 +311,20 @@ input[type='checkbox'] {
   min-width: 0;
 }
 .output-toolbar {
-  min-height: 38px;
+  min-height: 40px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
   margin-bottom: 15px;
-  font-size: 12px;
+  font-size: 14px;
   color: #7c838e;
 }
 .output-toolbar > div {
   display: flex;
   gap: 5px;
+  margin-left: auto;
   color: #414854;
 }
 .canvas {
@@ -364,7 +368,7 @@ input[type='checkbox'] {
   letter-spacing: 0.5px;
 }
 .empty-canvas span {
-  font-size: 12px;
+  font-size: 14px;
   color: #969da9;
 }
 .preview-label {
@@ -415,7 +419,7 @@ input[type='checkbox'] {
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
-  font-size: 12px;
+  font-size: 14px;
   color: #686f7b;
 }
 .field-caption span {
@@ -539,7 +543,8 @@ input[type='checkbox'] {
 }
 .history-item p {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
   color: #626976;
   overflow: hidden;
   display: -webkit-box;
@@ -559,7 +564,7 @@ input[type='checkbox'] {
 .history-empty {
   margin: 80px 0;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 .sponsor-page {
@@ -643,12 +648,9 @@ input[type='checkbox'] {
   .output-toolbar > div {
     gap: 0;
   }
-  .output-toolbar {
-    font-size: 10px;
-  }
   .output-toolbar .button {
-    padding: 7px 9px;
-    font-size: 11px;
+    gap: 5px;
+    padding-inline: 8px;
   }
   .history-drawer {
     padding: 22px;
@@ -725,10 +727,10 @@ input[type='checkbox'] {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 34px;
+  min-height: 40px;
   padding: 7px 10px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   user-select: none;
 }
