@@ -270,10 +270,6 @@ export function Studio() {
           </p>
         </div>
         <nav aria-label="主导航">
-          <Button variant="ghost" disabled={busy} onClick={startNew}>
-            <Plus size={17} />
-            新建
-          </Button>
           <Link to="/sponsor" className="nav-link">
             赞赏
             <ArrowUpRight size={14} />
@@ -388,25 +384,31 @@ export function Studio() {
                   ? '正在创作'
                   : '预览'}
             </span>
-            {selected && (
-              <div>
-                <Button
-                  variant="ghost"
-                  disabled={busy || ['svg', 'gif'].includes(selected.format)}
-                  onClick={() => sendToEdit(selected)}
-                >
-                  <Pencil size={15} />
-                  继续编辑
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => downloadBlob(selected.image, `image-${selected.id}.${selected.format}`)}
-                >
-                  <Download size={15} />
-                  下载
-                </Button>
-              </div>
-            )}
+            <div>
+              <Button variant="ghost" disabled={busy} onClick={startNew}>
+                <Plus size={15} />
+                新建
+              </Button>
+              {selected && (
+                <>
+                  <Button
+                    variant="ghost"
+                    disabled={busy || ['svg', 'gif'].includes(selected.format)}
+                    onClick={() => sendToEdit(selected)}
+                  >
+                    <Pencil size={15} />
+                    继续编辑
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => downloadBlob(selected.image, `image-${selected.id}.${selected.format}`)}
+                  >
+                    <Download size={15} />
+                    下载
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
           <div className={`canvas ${selected || preview ? 'has-image' : ''}`}>
             {preview ? (
