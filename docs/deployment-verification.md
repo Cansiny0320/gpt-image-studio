@@ -56,3 +56,23 @@
 - 生产 Chrome 实测 2.6 Flare / 自动质量 / 1024×1024 / PNG / 流式输出成功，D1 请求 `f98c6dbc-60f4-4a97-b588-7a98c6df27d9` 为 complete。赞赏页往返后生成按钮可直接使用，无验证码。
 - 另一个访问来源仍返回上游 `403 / unsupported_country_region_territory`，Worker 节点为 SEA。该地区限制尚未解决，不能以本次成功请求代表所有来源均恢复。
 - 本地直连同 key / 同模型 / 同 PNG 流式参数成功，说明已观察到的拒绝并非该组参数不合法或 key 普遍失效。具体上游地区判定依据仍未确认，未修改网络路由或部署转发服务。
+
+
+## Cloudflare 来源地区对照实验
+
+同日对报错访问来源做了两组线上实验，之后撤除临时探针与区域放置配置，恢复 `774fbf6` 的应用代码及常规错误日志。
+
+| 实验 | 接入节点 | OpenAI 域名 trace 的节点 / 来源国家 | 只读 API 对照 |
+| --- | --- | --- | --- |
+| 默认放置 | HKG | HKG / CN | 默认请求头 403；清空来源头 403 |
+| 显式 `placement.region=aws:us-west-2` | HKG | SEA / CN | 默认请求头 403；清空来源头 403 |
+
+- 默认放置请求 ID：`0d226e42-56c6-472f-9ab1-7c52d9d0578a`；区域放置请求 ID：`9b9997ab-8b37-4b96-89a4-88c91148e7a9`。
+- 两次真实 PNG 生图均返回 `unsupported_country_region_territory`。清空请求头对照使用同一次 Worker 调用上下文中的 `GET /v1/models`，没有额外自动生成图片；该对照不是清空请求头后的真实生图测试。
+- 清空项为 `CF-IPCountry`、`CF-Connecting-IP`、`X-Forwarded-For`、`X-Real-IP`，均使用空值，没有伪造国家或 IP。应用原本就只显式发送 Authorization 和生图所需的 Content-Type，没有转发访客原始请求头。
+- `api.openai.com/cdn-cgi/trace` 和 `www.cloudflare.com/cdn-cgi/trace` 都返回 200，且两者的国家均为 CN；美国区域放置后的两个目标节点均为 SEA。这证明改变执行区域并未消除该请求的访客来源上下文。
+- `request.cf.colo` 表示请求接入节点，并不独立证明 Worker 放置后的执行位置。前文日志中 `colo` 的值应按此理解。
+- 诊断只保留状态、国家代码和节点代码，不记录 IP、API key、提示词、原始 trace 内容。曾有一轮探针因 Workers 不支持 `redirect: error` 而未执行，相关 unavailable 结果已排除；改为 manual，并经本地 Workers 运行时验证后才得到了本表有效结果。
+- 排查边界：已证实清空上述请求头的只读请求和美国区域放置均未解除拒绝；没有确认任何能在现有 Workers → OpenAI 直连链路中关闭平台来源上下文的有效配置。地区限制尚未修复，未新增 VPS 服务，也未向 VPS 传入 API key。
+
+依据：[Cloudflare 请求头与跨站子请求](https://developers.cloudflare.com/fundamentals/reference/http-headers/)、[Workers Placement](https://developers.cloudflare.com/workers/configuration/placement/)、[OpenAI 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)。
