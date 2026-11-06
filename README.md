@@ -1,72 +1,76 @@
-# GPT Image Studio
+<h1 align="center">GPT Image Studio</h1>
+<p align="center">GPT Image 生图与图片编辑，支持流式预览、本地历史和 Cloudflare 自部署。</p>
+<p align="center">
+  <a href="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml"><img src="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml/badge.svg" alt="Checks"></a>
+</p>
+<p align="center">简体中文 · <a href="README.en.md">English</a></p>
+<p align="center">
+  <a href="https://image.cansiny.top">在线使用</a> ·
+  <a href="docs/hosting.md">部署说明</a> ·
+  <a href="https://github.com/Cansiny0320/gpt-image-studio/issues">问题反馈</a> ·
+  <a href="#赞赏">赞赏</a>
+</p>
 
-GPT Image 文生图与图片编辑工作台。使用站点服务端 API key，访客无需登录；提示词、参数和最终图片完整保存在浏览器，服务端另存私有档案。
+## 在线使用
 
-网站：[image.cansiny.top](https://image.cansiny.top) · [赞赏](https://image.cansiny.top/sponsor)
+访问 [image.cansiny.top](https://image.cansiny.top)，输入提示词即可生成图片，无需登录或填写 API key。
 
-## 使用
+支持文生图、参考图编辑、遮罩 / 标注 PNG 上传、流式预览，每次最多生成 3 张图片。尺寸、质量、背景、输出格式等参数随模型切换，高级选项按需展开。
 
-- 文生图、参考图编辑、遮罩 / 标注 PNG 上传、批量生成和流式预览。
-- 按模型联动的尺寸、质量、背景、格式、压缩、复杂度、审核和编辑保真度。SVG / GIF 预览能力由服务端显式启用。
-- 本地历史、下载、继续编辑、ZIP 导出与导入。历史查看不读取服务器。
-- Turnstile 服务端验证、来源检查、请求去重；没有每日张数限制、全站固定并发上限或自动过期。
+生成结果可以下载或继续编辑。历史记录保存在当前浏览器，包含完整提示词、参数和图片，支持 ZIP 导出与导入。
 
 ## 本地运行
 
-需要 Node.js 24.11+ 和 pnpm 10。
+需要 Node.js 24.11+、pnpm 10，以及具有目标图片模型访问权限的 OpenAI API key。
 
-```sh
+```bash
+git clone https://github.com/Cansiny0320/gpt-image-studio.git
+cd gpt-image-studio
 pnpm install --frozen-lockfile
 cp apps/web/.dev.vars.example apps/web/.dev.vars
-# 仅在 .dev.vars 中配置 OPENAI_API_KEY
+```
+
+在 `apps/web/.dev.vars` 中设置 `OPENAI_API_KEY`，然后启动：
+
+```bash
 pnpm db:local
 pnpm dev
 ```
 
-打开 http://127.0.0.1:4327 。本地 D1 / R2 位于 `apps/web/.wrangler`，不会写入线上资源。`.dev.vars` 使用 Turnstile 官方测试 key，服务端只允许它在 development + localhost 下使用。
+打开 [127.0.0.1:4327](http://127.0.0.1:4327)。本地使用模拟 D1 / R2 和 Turnstile 官方测试 key，不写入线上存储。
 
-```sh
-pnpm test        # 参数、安全、流式响应、留档失败、本地备份
-pnpm build      # 构建与静态页面生成
-pnpm verify     # lint、格式检查、类型检查、测试、构建
-```
+## 自部署
 
-首次单独运行 typecheck 前先运行 build，生成 TanStack 路由类型。修改 Worker bindings 后运行 `pnpm --filter @studio/web types`。格式化命令为 `pnpm --filter @studio/web format`，会修改文件。
+部署需要 Cloudflare Workers、D1、私有 R2 bucket 和 Turnstile。先按 [部署说明](docs/hosting.md) 配置自己的资源、域名和 Worker Secrets，再执行：
 
-## 部署
-
-生产环境使用 `image.cansiny.top`，配置见 `apps/web/wrangler.jsonc`。D1、私有 R2、Turnstile 已为此项目单独创建；`OPENAI_API_KEY` 和 `TURNSTILE_SECRET_KEY` 保存在 Worker Secrets。
-
-```sh
+```bash
 pnpm --filter @studio/web exec wrangler d1 migrations apply studio-archive --remote
-pnpm deploy
+pnpm run deploy
 ```
 
-先确认当前 Cloudflare 账户正确，再执行远程迁移或部署。`pnpm deploy` 构建后使用生成配置部署，保留既有 Worker Secrets。GitHub Actions 只做检查，不自动部署。首次部署到其他账户时需要替换 account、D1、R2、域名和 Turnstile 配置，并通过 Secrets 设置密钥。
+仓库中的资源配置属于当前站点，部署到自己的账户前必须替换。GitHub Actions 只运行检查，不自动部署。
 
-`APP_ENV` 在线保持 `production`，Turnstile 仅允许 `image.cansiny.top`。R2 不开放公共访问，workers.dev 和预览 URL 关闭。`ENABLE_PREVIEW_FORMATS=true` 仅在确认 API 项目有 SVG / GIF 权限后开启。缺失必要配置或验证失败时拒绝生图。
+## 几点说明
 
-`.dev.vars` 只用于本地，切勿将它或 `dist/server/.dev.vars` 上传到 GitHub 或作为公开资产。静态页面导航和资源由 Workers Static Assets 提供，`/api/*` 进入 Worker，参考 [Cloudflare SPA 路由配置](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/)。
+- API key 仅保存在服务端。生图请求经过 Worker，访客通过 Turnstile 验证后调用。
+- 服务端会另存提示词和最终图片作为私有档案，不提供访客读取或恢复历史的接口。删除本地历史不会删除服务端档案；档案不自动过期。
+- 清理浏览器数据会丢失本地历史，重要作品请下载或导出备份。上传的参考图、遮罩、标注和中间预览不留档。
+- 模型能力取决于 API 项目权限。SVG / GIF 预览能力默认关闭，上传大小等站点限制见 [使用说明](docs/usage.md)。
 
-## 数据与限制
+## 开发
 
-- 浏览器 IndexedDB：完整提示词、生成参数、最终图片 Blob 和时间。删除本地历史不会删除服务端档案，清理浏览器数据后无法从服务端找回。ZIP 备份可迁移历史；默认导出已加载记录，也可选择部分记录。
-- D1：提示词、请求状态和必要图片元数据。R2：最终图片原始二进制文件。两者均不提供面向访客的历史读取或读图接口。
-- 参考图、遮罩和标注只在当前请求中处理；中间预览不保存。不记录提示词、图片内容或 key 到日志。
-- 编辑支持最多 16 张参考图；站点为 Workers 内存设置单文件 10 MB、总请求 24 MB 上限（界面预留开销限制为 23 MB）。单图片响应事件上限 20 MiB。这些是站点处理限制，不代表 OpenAI 的全部上传上限。
-- 备份支持最多 256 MB 图片数据，较大历史请选择分批导出。浏览器可能清理站点数据，重要作品建议下载或导出。
-- SVG / GIF 不支持流式预览，SVG 仅支持单张文生图。SVG 以 `<img>` 显示，不插入 HTML。GIF 和 SVG 结果可下载，但不能直接用作栅格参考图继续编辑。
-- 若连接中断，上游可能已经产生用量；不会自动重新生成。已收到的最终图仍可保存。服务端留档失败会明确提示，不丢弃已生成图片。
-- 本地存储写入失败时保留内存副本供下载或重试保存。服务端存档不自动过期。
+使用 TypeScript、React 19、TanStack Start / Router、Tailwind CSS v4、Base UI / shadcn、Zustand、oRPC、Drizzle 和 Cloudflare Workers / D1 / R2，通过 pnpm workspace 与 Vite+ 构建。
 
-## 技术栈
+运行 `pnpm test` 执行测试，`pnpm build` 构建，`pnpm verify` 执行 lint、格式检查、类型检查、测试和构建。首次检查前先运行一次 `pnpm build`，生成路由类型。
 
-TypeScript、React 19、TanStack Start / Router、Tailwind CSS v4、shadcn（base-nova）/ Base UI、Lucide、Zustand、oRPC、Cloudflare Workers / D1 / R2、Drizzle、Vite+、pnpm workspace。
+界面交互参考 [GPT Image Playground](https://github.com/CookSleep/gpt_image_playground)，实现独立编写。设计与实施记录见 [spec](docs/spec.md) 和 [plan](docs/plan.md)。
 
-设计及实现计划见 [spec](docs/spec.md) 和 [plan](docs/plan.md)。界面交互参考 [GPT Image Playground](https://github.com/CookSleep/gpt_image_playground)，实现独立编写。
+## 反馈
+
+有问题可以提 [Issue](https://github.com/Cansiny0320/gpt-image-studio/issues)，附上复现步骤、浏览器、模型和报错信息。请勿提交 API key、私密提示词或图片。
 
 ## 赞赏
 
-觉得好用的话，欢迎通过微信或支付宝支持一下。网站右上角「赞赏」打开 `/sponsor`，与 README 使用同一套收款码，来自 [Heybox Daily](https://github.com/Cansiny0320/heybox-daily)。
+觉得好用的话，欢迎通过微信或支付宝支持一下。也可以打开网站的 [赞赏页面](https://image.cansiny.top/sponsor)。
 
-![微信和支付宝赞赏收款码](apps/web/public/sponsorship.png)
+![微信与支付宝赞赏二维码](apps/web/public/sponsorship.png)
