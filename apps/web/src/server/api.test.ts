@@ -253,6 +253,24 @@ describe('API boundary', () => {
     expect(response.status).toBe(409);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it('records the selected settings even when generation fails before returning an image', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, { size: '1536x1024', quality: 'high', output_format: 'webp' });
+    body.set('payload', JSON.stringify(payload));
+    const a = archive();
+    const fetcher = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('network failure');
+    });
+
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
+
+    expect(response.status).toBe(503);
+    expect(a.reserve).toHaveBeenCalledWith(payload.requestId, payload.settings);
+    expect(a.reserve).toHaveBeenCalledBefore(fetcher);
+    expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
+    expect(a.save).not.toHaveBeenCalled();
+  });
   it('returns final bytes while retaining the key exclusively in the upstream header', async () => {
     const a = archive();
     const fetcher = upstream();

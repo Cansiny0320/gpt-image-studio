@@ -10,7 +10,7 @@ The API key stays on the server. Image requests go through a Worker without CAPT
 
 - Generate up to three images per request. SVG remains limited to one image.
 - Browser IndexedDB stores full prompts, generation settings, final image Blobs, and timestamps. Deleting local history does not delete server archives. Clearing browser data cannot be undone by restoring from the server. ZIP backups can transfer history; export includes loaded records by default, or a selected subset.
-- D1 stores prompts, request status, and necessary image metadata. R2 stores original final image bytes. Neither provides visitor-facing history or image retrieval endpoints.
+- D1 stores prompts, request status, and necessary image metadata. It records the selected settings when a validated request starts, even if generation fails. R2 stores original final image bytes. Neither provides visitor-facing history or image retrieval endpoints.
 - References, masks, and markup are processed only for the current request. Intermediate previews are not stored. Logs do not include prompts, image content, or API keys.
 - Editing supports up to 16 reference images. To stay within Worker memory constraints, the app limits each file to 10 MB and the total request to 24 MB; the UI uses 23 MB to leave room for overhead. Each image response event is limited to 20 MiB. These application limits are not the full OpenAI upload limits.
 - Backups support up to 256 MB of image data. Export larger histories in batches. Browsers may evict site data, so download important images or export a backup.

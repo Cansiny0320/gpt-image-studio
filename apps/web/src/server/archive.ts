@@ -7,17 +7,18 @@ import type { Settings } from '../lib/contract';
 import { PublicError } from './errors';
 
 export interface Archive {
-  reserve(id: string): Promise<boolean>;
+  reserve(id: string, settings: Settings): Promise<boolean>;
   save(id: string, index: number, settings: Settings, b64: string): Promise<string>;
   finish(id: string, status: string): Promise<void>;
 }
 export function createArchive(env: Pick<Env, 'DB' | 'IMAGES'>): Archive {
   const db = drizzle(env.DB);
   return {
-    async reserve(id) {
+    async reserve(id, settings) {
+      const { prompt: _prompt, ...selectedSettings } = settings;
       const rows = await db
         .insert(requests)
-        .values({ id, createdAt: Date.now(), status: 'started' })
+        .values({ id, createdAt: Date.now(), status: 'started', settings: selectedSettings })
         .onConflictDoNothing()
         .returning({ id: requests.id });
       return rows.length === 1;

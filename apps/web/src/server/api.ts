@@ -47,7 +47,8 @@ export async function handleApi(
     const transport = imageTransport(env);
     const input = await parseInput(request, env.ENABLE_PREVIEW_FORMATS === 'true');
     archive = deps.archive ?? createArchive(env);
-    if (!(await archive.reserve(input.requestId))) throw new PublicError('该请求已提交，请勿重复生成。', 409);
+    if (!(await archive.reserve(input.requestId, input.settings)))
+      throw new PublicError('该请求已提交，请勿重复生成。', 409);
     requestId = input.requestId;
     const digest = await crypto.subtle.digest(
       'SHA-256',
