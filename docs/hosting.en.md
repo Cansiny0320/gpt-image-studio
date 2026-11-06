@@ -55,6 +55,8 @@ You need a Cloudflare account with Workers, D1, and R2 enabled, a domain managed
 | `vars.APP_ENV`                | `production`                                                                                |
 | `vars.ENABLE_PREVIEW_FORMATS` | Controls SVG only; keep `false` until SVG access is verified. GIF is enabled for 2.6 models |
 
+For self-hosting, set `VITE_SITE_ORIGIN` in `apps/web/.env.production.local` to match `vars.APP_ORIGIN`. The build uses it for canonical URLs, `robots.txt`, and `sitemap.xml`.
+
 From `apps/web`, set secrets interactively. Do not put keys in command arguments, Git, or plain environment-variable configuration:
 
 ```bash

@@ -61,6 +61,8 @@ pnpm dev
 pnpm exec wrangler secret put OPENAI_API_KEY
 ```
 
+自托管时，在 `apps/web/.env.production.local` 中设置 `VITE_SITE_ORIGIN`，值与 `vars.APP_ORIGIN` 一致。构建会用它生成 canonical、`robots.txt` 和 `sitemap.xml`。
+
 如果 Worker 尚不存在，按 Wrangler 提示创建同名 Worker 后继续。然后回到仓库根目录，应用迁移并部署；若修改了数据库名称，替换命令中的 `studio-archive`：
 
 ```bash

@@ -221,9 +221,11 @@ export function Studio() {
       <header className="app-header">
         <div className="header-brand">
           <div className="brand-links">
-            <Link to="/" className="wordmark">
-              Image Studio<span>GPT</span>
-            </Link>
+            <h1>
+              <Link to="/" className="wordmark">
+                Image Studio<span>GPT</span>
+              </Link>
+            </h1>
             <a
               href="https://github.com/Cansiny0320/gpt-image-studio"
               target="_blank"

@@ -1,7 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 export const Route = createFileRoute('/sponsor')({
-  head: () => ({ meta: [{ title: '赞赏 · Image Studio' }] }),
+  head: () => ({
+    meta: [
+      { title: '赞赏 · GPT Image Studio' },
+      { name: 'description', content: '通过微信或支付宝赞赏，支持开源项目 GPT Image Studio。' },
+    ],
+    links: [{ rel: 'canonical', href: `${import.meta.env.VITE_SITE_ORIGIN}/sponsor` }],
+  }),
   component: Sponsor,
 });
 function Sponsor() {

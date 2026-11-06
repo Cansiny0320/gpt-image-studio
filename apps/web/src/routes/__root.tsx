@@ -2,12 +2,8 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-r
 import '../styles.css';
 export const Route = createRootRoute({
   head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Image Studio · GPT 生图' },
-      { name: 'description', content: 'GPT Image 图片生成与编辑工作台。历史记录保存在你的浏览器。' },
-    ],
+    meta: [{ charSet: 'utf-8' }, { name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+    links: [{ rel: 'icon', type: 'image/png', sizes: '64x64', href: '/favicon.png' }],
   }),
   shellComponent: ({ children }) => (
     <html lang="zh-CN">
