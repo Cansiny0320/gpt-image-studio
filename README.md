@@ -12,6 +12,8 @@
   <a href="#赞赏">赞赏</a>
 </p>
 
+![GPT Image Studio 网页截图：模型选择、生成参数与图片预览](.github/screenshots/studio.jpg)
+
 ## 在线使用
 
 访问 [image.cansiny.top](https://image.cansiny.top)，输入提示词即可生成图片，无需登录或填写 API key。

@@ -12,6 +12,8 @@
   <a href="#support">Support</a>
 </p>
 
+![GPT Image Studio: model selection, generation settings, and image preview](.github/screenshots/studio.jpg)
+
 ## Try it online
 
 Visit [image.cansiny.top](https://image.cansiny.top) and enter a prompt to generate an image. No account or personal API key is required.
