@@ -26,6 +26,7 @@
     "APP_ENV": "production",
     "APP_ORIGIN": "https://image.cansiny.top",
     "ENABLE_PREVIEW_FORMATS": "false",
+    "IMAGE_RELAY_ORIGIN": "https://image-origin.cansiny.top:8443",
   },
   "observability": {
     "enabled": true,

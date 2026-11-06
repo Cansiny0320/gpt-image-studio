@@ -84,6 +84,30 @@ To roll back code, use Worker version rollback in the Cloudflare dashboard. This
 
 See [usage notes](usage.en.md) for storage behavior and upload limits. [Local verification](verification.md) and [deployment verification](deployment-verification.md) are recorded in Chinese.
 
+## AI Gateway (optional)
+
+Production uses the Tokyo relay described below. Provider-native AI Gateway support remains optional; testing did not resolve this incident's CN-origin rejection. To use a gateway, remove `vars.IMAGE_RELAY_ORIGIN` and set your own `vars.AI_GATEWAY_ACCOUNT_ID` and `vars.AI_GATEWAY_ID`.
+
+Enable authentication and Require provider credentials (BYOK only). Disable logs, Logpush, caching and automatic retries. Create a token with only AI Gateway Run permission for your account, then run from `apps/web`:
+
+```bash
+pnpm exec wrangler secret put AI_GATEWAY_TOKEN
+```
+
+Keep the existing `OPENAI_API_KEY` Secret. The app preserves native JSON / multipart requests and streaming responses, and explicitly disables gateway logging, caching, retries and Unified Billing fallback. Incomplete gateway configuration rejects generation before contacting OpenAI. Rebuild and deploy after configuration changes. Clear both gateway variables to roll back to direct requests; retaining the token Secret alone does not enable the gateway.
+
+Gateway variables in `.dev.vars.example` are empty, so local development defaults to a direct connection. Fill in your own IDs and token to test the gateway locally. Regional availability requires a real request from the affected route; successful deployment does not establish that a regional failure is fixed. See the [integration plan](ai-gateway-plan.md).
+
+## Self-hosted relay (current production path)
+
+Requests flow from the browser through the Worker and Tokyo Nginx to OpenAI. Frontend hosting, validation, deduplication and D1/R2 archival remain on Cloudflare; user history remains in the browser. The OpenAI key stays in Worker Secrets and is forwarded over verified HTTPS without being stored in VPS files.
+
+Set `vars.IMAGE_RELAY_ORIGIN` to your own HTTPS relay origin and provision `IMAGE_RELAY_TOKEN` using `wrangler secret put IMAGE_RELAY_TOKEN`. Relay and AI Gateway IDs cannot be enabled together. Replace the hosted site's relay address when self-hosting, or remove the relay origin and both gateway IDs to connect directly to OpenAI. Unused token Secrets alone do not enable routing.
+
+The [Nginx example](../deploy/nginx/image-relay.conf) allows only the two image POST endpoints, requires a separate random token, and disables forwarded request headers, retries, caches and buffering. Only Authorization, Content-Type and the fixed Host reach OpenAI. Store your random token in the root-only `/etc/nginx/snippets/gpt-image-relay-secret.conf`: `set $studio_relay_token "YOUR_RANDOM_TOKEN";`. Replace the domain and certificate paths, configure TLS verification, automatic certificate renewal and port access, preserve the 40 MiB upload limit, and run `nginx -t` before a graceful reload. Never commit actual tokens. Install the [renewal hook example](../deploy/nginx/renew-image-relay.sh) under Certbot’s `renewal-hooks/deploy`; it validates and reloads Nginx only when this certificate renews.
+
+To roll back, clear `IMAGE_RELAY_ORIGIN` and redeploy the Worker. Stop the VPS relay only after production no longer uses it. Database and image migration is unnecessary.
+
 ## Stack and design
 
 Built with TypeScript, React 19, TanStack Start / Router, Tailwind CSS v4, Base UI / shadcn, Zustand, oRPC, Drizzle, and Cloudflare Workers / D1 / R2, using pnpm workspaces and Vite+.

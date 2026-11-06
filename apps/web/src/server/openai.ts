@@ -5,6 +5,7 @@ import type { Archive } from './archive';
 import { PublicError } from './errors';
 import { readJSONImages, readSSE } from './stream';
 import { upstreamDiagnostic } from './upstream-error';
+import type { ImageTransport } from './transport';
 
 const imageSchema = z.object({
   b64_json: z
@@ -48,23 +49,27 @@ export async function openImageRequest(
   signal: AbortSignal,
   fetcher: typeof fetch,
   context?: { requestId: string; colo?: string },
+  transport?: ImageTransport,
 ) {
   const response = await fetcher(
-    `https://api.openai.com/v1/images/${settings.mode === 'edit' ? 'edits' : 'generations'}`,
+    `${transport?.baseURL ?? 'https://api.openai.com/v1'}/images/${settings.mode === 'edit' ? 'edits' : 'generations'}`,
     {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${key}`,
+        ...transport?.headers,
         ...(settings.mode === 'generate' ? { 'content-type': 'application/json' } : {}),
       },
       body: upstreamBody(settings, files, safetyId),
       signal,
+      redirect: 'manual',
     },
   );
   if (!response.ok) {
     const diagnostic = await upstreamDiagnostic(response);
     console.error({
       event: 'image_upstream_error',
+      transport: transport?.name ?? 'direct',
       ...diagnostic,
       requestId: context?.requestId,
       colo: context?.colo,

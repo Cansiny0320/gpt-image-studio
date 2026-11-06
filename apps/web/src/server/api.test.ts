@@ -43,6 +43,108 @@ function upstream() {
   return vi.fn<typeof fetch>(async () => Response.json({ data: [{ b64_json: png }] }));
 }
 describe('API boundary', () => {
+  const gatewayEnv = {
+    ...env,
+    AI_GATEWAY_ACCOUNT_ID: 'a'.repeat(32),
+    AI_GATEWAY_ID: 'studio-test',
+    AI_GATEWAY_TOKEN: 'private-gateway-token',
+  };
+  it.each(['generate', 'edit'] as const)(
+    'routes %s through the authenticated native gateway',
+    async (mode) => {
+      const body = form(mode);
+      if (mode === 'edit')
+        body.set('image', new File([Buffer.from(png, 'base64')], 'test.png', { type: 'image/png' }));
+      const fetcher = upstream();
+      const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: archive() });
+      const text = await response.text();
+      expect(response.status).toBe(200);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const [url, init] = fetcher.mock.calls[0];
+      expect(url).toBe(
+        `https://gateway.ai.cloudflare.com/v1/${gatewayEnv.AI_GATEWAY_ACCOUNT_ID}/studio-test/openai/images/${mode === 'edit' ? 'edits' : 'generations'}`,
+      );
+      const headers = new Headers(init?.headers);
+      expect(headers.get('authorization')).toBe(`Bearer ${env.OPENAI_API_KEY}`);
+      expect(headers.get('cf-aig-authorization')).toBe(`Bearer ${gatewayEnv.AI_GATEWAY_TOKEN}`);
+      expect(headers.get('cf-aig-collect-log')).toBe('false');
+      expect(headers.get('cf-aig-skip-cache')).toBe('true');
+      expect(headers.get('cf-aig-no-wholesale')).toBe('true');
+      expect(headers.get('cf-aig-max-attempts')).toBe('1');
+      expect(init?.redirect).toBe('manual');
+      expect(text).toContain(png);
+      expect(text).not.toContain(gatewayEnv.AI_GATEWAY_TOKEN);
+      if (mode === 'edit') {
+        expect(headers.has('content-type')).toBe(false);
+        expect(init?.body).toBeInstanceOf(FormData);
+        expect((init!.body as FormData).getAll('image[]')).toHaveLength(1);
+      }
+    },
+  );
+  it.each([{ AI_GATEWAY_TOKEN: '' }, { AI_GATEWAY_ACCOUNT_ID: '' }, { AI_GATEWAY_ID: '../wrong' }])(
+    'rejects incomplete or invalid gateway configuration before a paid call: %j',
+    async (override) => {
+      const fetcher = upstream();
+      const a = archive();
+      const response = await handleApi(request(), { ...gatewayEnv, ...override }, { fetcher, archive: a });
+      expect(response.status).toBe(503);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(a.reserve).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves GIF parameters and completed bytes through the gateway', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, {
+      output_format: 'gif',
+      size: 'auto',
+      frame_count: 9,
+      frame_duration_ms: 200,
+      stream: false,
+      partial_images: 0,
+    });
+    body.set('payload', JSON.stringify(payload));
+    const gif = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ data: [{ b64_json: gif, output_format: 'gif' }] }),
+    );
+    const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: archive() });
+    expect(await response.text()).toContain(gif);
+    expect(JSON.parse(fetcher.mock.calls[0][1]?.body as string)).toMatchObject({
+      output_format: 'gif',
+      frame_count: 9,
+      frame_duration_ms: 200,
+      stream: false,
+    });
+  });
+  it('preserves PNG streaming previews through the gateway', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    Object.assign(payload.settings, { stream: true, partial_images: 1 });
+    body.set('payload', JSON.stringify(payload));
+    const fetcher = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          ['image_generation.partial_image', 'image_generation.completed']
+            .map((type) => `data: ${JSON.stringify({ type, b64_json: png })}\n\n`)
+            .join(''),
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+    );
+    const a = archive();
+    const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: a });
+    expect(
+      (await response.text())
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line).type),
+    ).toEqual(['preview', 'image', 'done']);
+    expect(a.save).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetcher.mock.calls[0][1]?.body as string)).toMatchObject({
+      stream: true,
+      partial_images: 1,
+    });
+  });
   it.each(['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'])(
     'accepts GIF without enabling SVG: %s',
     async (model) => {
@@ -194,6 +296,53 @@ describe('API boundary', () => {
     await response.text();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0][0])).toBe('https://api.openai.com/v1/images/generations');
+  });
+});
+describe('Japan relay', () => {
+  const relayEnv = {
+    ...env,
+    IMAGE_RELAY_ORIGIN: 'https://image-origin.example:8443',
+    IMAGE_RELAY_TOKEN: 'private-relay-token',
+  };
+  it.each(['generate', 'edit'] as const)(
+    'authenticates %s without forwarding visitor headers',
+    async (mode) => {
+      const body = form(mode);
+      if (mode === 'edit')
+        body.set('image', new File([Buffer.from(png, 'base64')], 'test.png', { type: 'image/png' }));
+      const req = request(body);
+      req.headers.set('cf-ipcountry', 'CN');
+      req.headers.set('x-forwarded-for', '192.0.2.1');
+      const fetcher = upstream();
+      const response = await handleApi(req, relayEnv, { fetcher, archive: archive() });
+      const result = await response.text();
+      expect(response.status).toBe(200);
+      expect(fetcher.mock.calls[0][0]).toBe(
+        `https://image-origin.example:8443/v1/images/${mode === 'edit' ? 'edits' : 'generations'}`,
+      );
+      const headers = new Headers(fetcher.mock.calls[0][1]?.headers);
+      expect(headers.get('x-studio-relay-token')).toBe(relayEnv.IMAGE_RELAY_TOKEN);
+      expect(headers.get('authorization')).toBe(`Bearer ${env.OPENAI_API_KEY}`);
+      expect(headers.has('cf-ipcountry')).toBe(false);
+      expect(headers.has('x-forwarded-for')).toBe(false);
+      expect(headers.has('cf-aig-authorization')).toBe(false);
+      expect(result).not.toContain(relayEnv.IMAGE_RELAY_TOKEN);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([
+    { IMAGE_RELAY_TOKEN: '' },
+    { IMAGE_RELAY_ORIGIN: 'http://image-origin.example' },
+    { IMAGE_RELAY_ORIGIN: 'https://user:pass@image-origin.example' },
+    { IMAGE_RELAY_ORIGIN: 'https://image-origin.example/path' },
+    { AI_GATEWAY_ID: 'also-enabled' },
+  ])('fails closed before archival for unsafe or ambiguous relay configuration: %j', async (override) => {
+    const fetcher = upstream();
+    const a = archive();
+    const response = await handleApi(request(), { ...relayEnv, ...override }, { fetcher, archive: a });
+    expect(response.status).toBe(503);
+    expect(a.reserve).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 describe('reference uploads', () => {

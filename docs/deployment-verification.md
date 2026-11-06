@@ -76,3 +76,34 @@
 - 排查边界：已证实清空上述请求头的只读请求和美国区域放置均未解除拒绝；没有确认任何能在现有 Workers → OpenAI 直连链路中关闭平台来源上下文的有效配置。地区限制尚未修复，未新增 VPS 服务，也未向 VPS 传入 API key。
 
 依据：[Cloudflare 请求头与跨站子请求](https://developers.cloudflare.com/fundamentals/reference/http-headers/)、[Workers Placement](https://developers.cloudflare.com/workers/configuration/placement/)、[OpenAI 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)。
+# AI Gateway 与东京转发验收（2026-11-06）
+
+最终生产版本：`291f6e08-02b3-4b86-b8f5-99d07e299534`。链路为浏览器 → Cloudflare Worker → 东京 VPS Nginx → OpenAI；网页、D1/R2 与本地历史未迁移。
+
+## AI Gateway 实验结果
+
+- 创建项目网关，启用鉴权和 BYOK-only，关闭日志、Logpush、缓存，最大尝试次数为 1；请求再次显式禁用日志、缓存、重试与 Unified Billing 回退。
+- 通过原生接口完成 PNG 生成和 multipart 图片编辑，均 HTTP 200 且归档成功；请求分别为 `1262805a-ec39-49b6-a82e-0703a367c803`、`67f32535-c951-4c36-919b-03a2fc16768e`。
+- 受影响浏览器请求 `5cd0a3de-b993-44bb-b27f-c3ba9d16fd42` 仍返回 403 `unsupported_country_region_territory`，日志明确 `transport=ai_gateway`、接入节点 HKG。因此未将本网关作为地区问题的解决方案。
+- Gateway GIF 尝试在本机连接网站时超时，没有完成上游验证；不得把该本机网络错误归因于 Gateway 不支持 GIF。
+- 生产已移除两个 Gateway ID 变量，仅保留可选接入代码；测试网关和 Run-only token 未删除，不在当前调用链路中。网关日志、缓存和计费回退保持关闭。
+
+## 东京转发结果
+
+- 东京 VPS 用同一 key 直接调用图片 API，HTTP 200，1 张 PNG，12.4 秒。key 通过 SSH stdin 临时传入，未保存到 VPS。
+- 使用独立 Nginx vhost `image-origin.cansiny.top:8443`，DNS-only，独立 Let's Encrypt 证书。共享鉴权 token 在 Worker Secret 和 root-only（0600）Nginx snippet；OpenAI key 只随 HTTPS 请求传递。
+- Nginx 仅转发两个图片 POST 路径，关闭所有原始请求头透传，仅设置 Authorization、Content-Type、Host 与 Connection；验证上游 TLS；禁止重试、缓存和缓冲。未改变现有 VPS 应用路由。
+- 无 token / 错误 token：403；非 POST：405；非白名单路径：404；合法 relay token 但缺 OpenAI key：上游 401，证明鉴权边界与转发生效。
+- `nginx -t` 和平滑 reload 成功，Nginx active。现有 Certbot renew timer 会处理新证书；增加仅对该证书生效的 Nginx reload hook，并手动执行通过。证书本次有效期至 2027-02-04。
+
+| 线上真实请求 | 请求 ID | 结果 |
+| --- | --- | --- |
+| PNG，2.6 Flare，自动质量，stream=true | `7221987d-0d49-4bc2-b075-619f590a51f0` | HTTP 200，1024×1024，758,787 bytes，8.6 秒，归档成功 |
+| GIF，9 帧参数，200 ms，非流式 | `da843312-e9d9-4527-b9a3-7255313fd107` | HTTP 200，GIF 文件签名正确，512×512，110,533 bytes，12.8 秒，归档成功；未独立核验返回文件帧数 |
+| multipart 图片编辑，stream=true | `abd98680-4efc-4389-b9e6-4bdfe8fef315` | HTTP 200，1024×1024 PNG，805,257 bytes，14.7 秒，归档成功 |
+
+流式实测均收到了最终图片和 done；这些简单提示词未产生可单独观察的中间预览，不把它表述为已观察到 partial_image。分片与预览事件仍由单元测试覆盖。
+
+**用户在此前持续报错的同一浏览器重试后明确反馈“已成功生成”。** 该反馈与以上实测共同作为本次地区故障恢复的验收。
+
+完整 `pnpm verify` 通过：lint、格式、TypeScript、93 个测试、生产构建；前端产物检查未包含 OpenAI key、Gateway token 或 relay token。生产配置读回只有 relay origin 和对应 Secret，没有启用 Gateway ID。

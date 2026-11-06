@@ -6,6 +6,7 @@ import { assertOrigin } from './security';
 import { parseInput } from './input';
 import { imageEvents, openImageRequest } from './openai';
 import { PublicError, safeError } from './errors';
+import { imageTransport, type TransportEnvironment } from './transport';
 
 export const router = {
   config: os.$context<{ env: Env }>().handler(({ context }) => ({
@@ -18,7 +19,7 @@ const rpc = new RPCHandler(router);
 export type AppRouter = typeof router;
 export async function handleApi(
   request: Request,
-  env: Env,
+  env: Env & TransportEnvironment,
   deps: { fetcher?: typeof fetch; archive?: Archive } = {},
 ) {
   const fetcher = deps.fetcher ?? fetch;
@@ -43,6 +44,7 @@ export async function handleApi(
   try {
     assertOrigin(request, env.APP_ORIGIN);
     if (!env.OPENAI_API_KEY) throw new PublicError('生图服务尚未配置', 503);
+    const transport = imageTransport(env);
     const input = await parseInput(request, env.ENABLE_PREVIEW_FORMATS === 'true');
     archive = deps.archive ?? createArchive(env);
     if (!(await archive.reserve(input.requestId))) throw new PublicError('该请求已提交，请勿重复生成。', 409);
@@ -60,6 +62,7 @@ export async function handleApi(
       controller.signal,
       fetcher,
       { requestId, colo: typeof request.cf?.colo === 'string' ? request.cf.colo : undefined },
+      transport,
     );
     const events = imageEvents(upstream, input.settings, requestId, archive);
     const encoder = new TextEncoder();
