@@ -4,7 +4,7 @@ import { models } from '../lib/models';
 import { createArchive, type Archive } from './archive';
 import { assertOrigin } from './security';
 import { parseInput } from './input';
-import { imageEvents, openImageRequest } from './openai';
+import { imageEvents, openImageRequest, type ServerImageEvent } from './openai';
 import { imageAbortReason, ImageResponseError, imageTimeoutMessage, PublicError, safeError } from './errors';
 import { imageTransport, type TransportEnvironment } from './transport';
 import { upstreamRequestId } from './upstream-error';
@@ -18,6 +18,15 @@ export const router = {
 };
 const rpc = new RPCHandler(router);
 export type AppRouter = typeof router;
+
+function* encodeImage(event: ServerImageEvent, encoder: TextEncoder): Generator<Uint8Array> {
+  const { image, ...metadata } = event;
+  // Only Base64 characters go inside the JSON string; binary blocks align on three-byte boundaries.
+  yield encoder.encode(JSON.stringify(metadata).slice(0, -1) + ',"b64":"');
+  for (const chunk of image.chunks) yield encoder.encode(chunk.toString('base64'));
+  yield encoder.encode('"}\n');
+}
+
 export async function handleApi(
   request: Request,
   env: Env & TransportEnvironment,
@@ -98,15 +107,28 @@ export async function handleApi(
     const activeId = requestId;
     let cancelled = false;
     let settled = false;
+    let pending: Generator<Uint8Array> | undefined;
     const stream = new ReadableStream<Uint8Array>({
       async pull(sink) {
         try {
+          if (pending) {
+            const chunk = pending.next();
+            if (!chunk.done) {
+              sink.enqueue(chunk.value);
+              return;
+            }
+            pending = undefined;
+          }
           const result = await events.next();
           if (result.done || result.value.type === 'done') settled = true;
           if (cancelled) return;
           if (result.done) {
             cleanup();
             sink.close();
+          } else if (result.value.type === 'image') {
+            pending = encodeImage(result.value, encoder);
+            const head = pending.next();
+            if (!head.done) sink.enqueue(head.value);
           } else sink.enqueue(encoder.encode(JSON.stringify(result.value) + '\n'));
         } catch (error) {
           if (cancelled) return;
@@ -126,6 +148,8 @@ export async function handleApi(
       },
       async cancel() {
         cancelled = true;
+        pending?.return(undefined);
+        pending = undefined;
         onDisconnect();
         cleanup();
         await events.return(undefined).catch(() => {});

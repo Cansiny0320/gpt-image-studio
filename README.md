@@ -1,5 +1,5 @@
 <h1 align="center">GPT Image Studio</h1>
-<p align="center">GPT Image 生图与图片编辑，支持流式预览、本地历史和 Cloudflare 自部署。</p>
+<p align="center">GPT Image 生图与图片编辑，支持本地历史和 Cloudflare 自部署。</p>
 <p align="center">
   <a href="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml"><img src="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml/badge.svg" alt="Checks"></a>
 </p>
@@ -18,7 +18,7 @@
 
 访问 [image.cansiny.top](https://image.cansiny.top)，输入提示词即可生成图片，无需登录或填写 API key。
 
-支持文生图、参考图编辑、遮罩 / 标注 PNG 上传、流式预览，每次最多生成 3 张图片。尺寸、质量、背景、输出格式等参数随模型切换，高级选项按需展开。
+支持文生图、参考图编辑和遮罩 / 标注 PNG 上传，每次最多生成 3 张图片。尺寸、质量、背景、输出格式等参数随模型切换，高级选项按需展开。
 
 [查看参考图编辑实测案例](https://image.cansiny.top/guide#reference-edit-example)，包含原图、完整提示词和编辑结果。
 

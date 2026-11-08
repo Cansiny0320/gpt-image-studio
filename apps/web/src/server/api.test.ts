@@ -121,20 +121,12 @@ describe('API boundary', () => {
       stream: false,
     });
   });
-  it('preserves PNG streaming previews through the gateway', async () => {
+  it('forces legacy PNG preview requests to final images only', async () => {
     const body = form();
     const payload = JSON.parse(body.get('payload') as string);
     Object.assign(payload.settings, { stream: true, partial_images: 1 });
     body.set('payload', JSON.stringify(payload));
-    const fetcher = vi.fn<typeof fetch>(
-      async () =>
-        new Response(
-          ['image_generation.partial_image', 'image_generation.completed']
-            .map((type) => `data: ${JSON.stringify({ type, b64_json: png })}\n\n`)
-            .join(''),
-          { headers: { 'content-type': 'text/event-stream' } },
-        ),
-    );
+    const fetcher = upstream();
     const a = archive();
     const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: a });
     expect(
@@ -142,12 +134,15 @@ describe('API boundary', () => {
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line).type),
-    ).toEqual(['preview', 'image', 'done']);
+    ).toEqual(['image', 'done']);
     expect(a.save).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetcher.mock.calls[0][1]?.body as string)).toMatchObject({
-      stream: true,
-      partial_images: 1,
-    });
+    expect(a.reserve).toHaveBeenCalledWith(
+      payload.requestId,
+      expect.objectContaining({ stream: false, partial_images: 0 }),
+    );
+    const upstreamSettings = JSON.parse(fetcher.mock.calls[0][1]?.body as string);
+    expect(upstreamSettings.stream).toBe(false);
+    expect(upstreamSettings).not.toHaveProperty('partial_images');
   });
   it.each(['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'])(
     'accepts GIF without enabling SVG: %s',
@@ -208,7 +203,7 @@ describe('API boundary', () => {
       expect.any(String),
       0,
       expect.objectContaining({ output_format: 'gif' }),
-      gif,
+      { chunks: [Buffer.from(gif, 'base64')], byteLength: Buffer.from(gif, 'base64').length },
     );
   });
   it('still rejects SVG when preview formats are disabled', async () => {
@@ -295,19 +290,16 @@ describe('API boundary', () => {
   });
   it.each([
     [
-      'data: {"type":"error","error":{"code":"moderation_blocked","message":"A blue cup"}}\n\n',
+      '{"data":[{"type":"error","error":{"code":"moderation_blocked","message":"A blue cup"}}]}',
       { reason: 'upstream_error_event', code: 'moderation_blocked' },
     ],
     [
-      'data: {"type":"error","code":"A blue cup","message":"A blue cup"}\n\n',
+      '{"data":[{"type":"error","code":"A blue cup","message":"A blue cup"}]}',
       { reason: 'upstream_error_event', code: 'unknown' },
     ],
-    ['data: A blue cup\n\n', { reason: 'invalid_sse_json' }],
-    [
-      'data: {"type":"image_generation.partial_image","b64_json":"YQ=="}\n\n',
-      { reason: 'incomplete_image_response', receivedImages: 0, expectedImages: 1 },
-    ],
-  ])('logs a sanitized reason when an upstream stream fails (%j)', async (sse, diagnostic) => {
+    ['A blue cup', { reason: 'invalid_upstream_json' }],
+    ['{"data":[]}', { reason: 'incomplete_image_response', receivedImages: 0, expectedImages: 1 }],
+  ])('logs a sanitized reason when reading the upstream response fails (%j)', async (json, diagnostic) => {
     const body = form();
     const payload = JSON.parse(body.get('payload') as string);
     Object.assign(payload.settings, { stream: true, partial_images: 1 });
@@ -317,7 +309,7 @@ describe('API boundary', () => {
     try {
       const response = await handleApi(request(body), env, {
         archive: a,
-        fetcher: async () => new Response(sse, { headers: { 'x-request-id': 'req_stream' } }),
+        fetcher: async () => new Response(json, { headers: { 'x-request-id': 'req_stream' } }),
       });
 
       expect(await response.text()).toContain('"type":"error"');
@@ -353,14 +345,11 @@ describe('API boundary', () => {
       try {
         const response = await handleApi(request(body), env, {
           archive: archive(),
-          fetcher: async () =>
-            stream
-              ? new Response(`data: ${JSON.stringify({ type: 'error', error })}\n\n`)
-              : Response.json({ error }, { status }),
+          fetcher: async () => Response.json({ error }, { status }),
         });
 
         const result = JSON.parse(await response.text());
-        expect(stream ? result.message : result.error).toBe(message);
+        expect(result.error).toBe(message);
       } finally {
         log.mockRestore();
       }
@@ -432,6 +421,60 @@ describe('API boundary', () => {
     expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('authorization')).toBe(
       `Bearer ${env.OPENAI_API_KEY}`,
     );
+  });
+  it('delivers multiple complete NDJSON images in bounded chunks with their original bytes', async () => {
+    const body = form();
+    const payload = JSON.parse(body.get('payload') as string);
+    payload.settings.n = 2;
+    body.set('payload', JSON.stringify(payload));
+    const expected = [Buffer.alloc(48_001, 0x5a), Buffer.alloc(53_002, 0xa5)];
+    const a = archive();
+    const fetcher = async () =>
+      Response.json({ data: expected.map((bytes) => ({ b64_json: bytes.toString('base64') })) });
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of response.body!) chunks.push(chunk);
+    expect(Math.max(...chunks.map((chunk) => chunk.length))).toBeLessThanOrEqual(16 * 1024);
+    const records = Buffer.concat(chunks)
+      .toString()
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(records.map((event) => event.type)).toEqual(['image', 'image', 'done']);
+    expect(records.slice(0, 2).map((event) => Buffer.from(event.b64, 'base64'))).toEqual(expected);
+    expect(records.slice(0, 2).map((event) => event.id)).toEqual([
+      `${payload.requestId}-0`,
+      `${payload.requestId}-1`,
+    ]);
+    expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'complete');
+  });
+  it('cancels the upstream body when the browser stops during an image record', async () => {
+    const a = archive();
+    const body = form();
+    const { requestId } = JSON.parse(body.get('payload') as string);
+    const onCancel = vi.fn();
+    const fetcher = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(sink) {
+            sink.enqueue(new TextEncoder().encode(`{"data":[{"b64_json":"${png}"}`));
+          },
+          cancel: onCancel,
+        }),
+      );
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await handleApi(request(body), env, { fetcher, archive: a });
+      const reader = response.body!.getReader();
+      const first = await reader.read();
+      expect(new TextDecoder().decode(first.value)).toContain('"type":"image"');
+      await reader.cancel();
+      expect(onCancel).toHaveBeenCalledOnce();
+      expect(a.finish).toHaveBeenCalledWith(requestId, 'disconnected');
+      expect(a.finish).not.toHaveBeenCalledWith(requestId, 'complete');
+    } finally {
+      log.mockRestore();
+    }
   });
   it('accepts legacy tokens without performing verification', async () => {
     const body = form();

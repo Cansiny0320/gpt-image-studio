@@ -1,106 +1,144 @@
-import { JSONParser } from '@streamparser/json';
+import { none } from 'stream-chain/defs.js';
+import { jsonParser, type Token } from 'stream-json/core/parser.js';
 import { ImageResponseError, unreadableImageMessage } from './errors';
+import { ImageDecoder, type ImagePayload } from './image-payload';
 
 export const MAX_EVENT_BYTES = 20 * 1024 * 1024;
-function imageResponseTooLarge() {
-  return new ImageResponseError('返回的图片太大。可以选小一点的尺寸，或改用 WebP 后再试。', {
-    reason: 'image_response_too_large',
-  });
-}
 
-function parseSSEData(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ImageResponseError(unreadableImageMessage, { reason: 'invalid_sse_json' });
-  }
-}
+type UpstreamImage = {
+  image?: ImagePayload;
+  output_format?: unknown;
+  type?: unknown;
+  error?: unknown;
+  code?: unknown;
+};
+type ErrorDetails = { code?: unknown };
+type Frame =
+  | { role: 'root' | 'data' | 'skip'; key?: string }
+  | { role: 'image'; value: UpstreamImage; key?: string }
+  | { role: 'error'; value: ErrorDetails; key?: string };
 
-export async function* readLines(
-  body: ReadableStream<Uint8Array>,
-  limit = MAX_EVENT_BYTES,
-): AsyncGenerator<string> {
+export async function* readJSONImages(body: ReadableStream<Uint8Array>): AsyncGenerator<UpstreamImage> {
+  const tokenize = jsonParser({ packStrings: false, streamKeys: false, streamNumbers: false });
   const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let pieces: string[] = [];
-  let length = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      const chunk = done ? decoder.decode() : decoder.decode(value, { stream: true });
-      // An image can span thousands of chunks on one line. Search each chunk only once.
-      let start = 0;
-      let end: number;
-      while ((end = chunk.indexOf('\n', start)) >= 0) {
-        if (length + end - start > limit) throw imageResponseTooLarge();
-        pieces.push(chunk.slice(start, end));
-        const line = pieces.join('').replace(/\r$/, '');
-        pieces = [];
-        length = 0;
-        start = end + 1;
-        yield line;
-      }
-      if (start < chunk.length) {
-        length += chunk.length - start;
-        if (length > limit) throw imageResponseTooLarge();
-        pieces.push(chunk.slice(start));
-      }
-      if (done) break;
-    }
-    if (length) yield pieces.join('');
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
-export async function* readSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
-  let data: string[] = [];
-  let size = 0;
-  for await (const line of readLines(body)) {
-    if (!line) {
-      if (data.length) {
-        const text = data.join('\n');
-        if (text !== '[DONE]') yield parseSSEData(text);
-      }
-      data = [];
-      size = 0;
-    } else if (line.startsWith('data:')) {
-      const piece = line.slice(5).trimStart();
-      size += piece.length;
-      if (size > MAX_EVENT_BYTES) throw imageResponseTooLarge();
-      data.push(piece);
-    }
-  }
-  const tail = data.join('\n');
-  if (data.length && tail !== '[DONE]') yield parseSSEData(tail);
-}
-export async function* readJSONImages(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
-  const parser = new JSONParser({ paths: ['$.data.*'], keepStack: false, stringBufferSize: 65536 });
-  const queue: unknown[] = [];
+  const utf8 = new TextDecoder('utf-8', { fatal: true });
+  const frames: Frame[] = [];
   let pendingBytes = 0;
-  parser.onError = () => {
-    throw new ImageResponseError(unreadableImageMessage, { reason: 'invalid_upstream_json' });
-  };
-  parser.onValue = ({ value }) => {
-    queue.push(value);
-    pendingBytes = 0;
-  };
-  const reader = body.getReader();
+  let stringValue = '';
+  let decoder: ImageDecoder | undefined;
+
+  function readTokens(part?: Uint8Array): Token[] {
+    try {
+      const text = part ? utf8.decode(part, { stream: true }) : utf8.decode();
+      // The library types omit the flush sentinel accepted by its tokenizer.
+      const tokens = tokenize(text);
+      const tail = part ? none : tokenize(none as never);
+      return [
+        ...(typeof tokens === 'symbol' ? [] : tokens.values),
+        ...(typeof tail === 'symbol' ? [] : tail.values),
+      ];
+    } catch {
+      throw new ImageResponseError(unreadableImageMessage, { reason: 'invalid_upstream_json' });
+    }
+  }
+
+  function assign(frame: Frame | undefined, value: unknown) {
+    if (frame?.role === 'image') {
+      switch (frame.key) {
+        case 'b64_json':
+          frame.value.image = undefined;
+          break;
+        case 'output_format':
+        case 'type':
+        case 'error':
+        case 'code':
+          frame.value[frame.key] = value;
+      }
+    } else if (frame?.role === 'error' && frame.key === 'code') {
+      frame.value.code = value;
+    }
+  }
+
+  function* images(tokens: Token[]): Generator<UpstreamImage> {
+    for (const token of tokens) {
+      const frame = frames.at(-1);
+      switch (token.name) {
+        case 'keyValue':
+          if (frame) frame.key = token.value;
+          break;
+        case 'startObject':
+        case 'startArray':
+          if (!frame && token.name === 'startObject') {
+            frames.push({ role: 'root' });
+          } else if (frame?.role === 'root' && frame.key === 'data') {
+            frames.push({ role: 'data' });
+          } else if (frame?.role === 'data') {
+            frames.push({ role: 'image', value: {} });
+          } else if (frame?.role === 'image' && frame.key === 'error' && token.name === 'startObject') {
+            const error = {};
+            frame.value.error = error;
+            frames.push({ role: 'error', value: error });
+          } else {
+            assign(frame, true);
+            frames.push({ role: 'skip' });
+          }
+          break;
+        case 'endArray':
+        case 'endObject': {
+          const ended = frames.pop();
+          if (ended?.role === 'image') {
+            pendingBytes = 0;
+            yield ended.value;
+          }
+          break;
+        }
+        case 'startString':
+          stringValue = '';
+          if (frame?.role === 'image' && frame.key === 'b64_json') {
+            // Drop a duplicate value before allocating the last one, as with a normal JSON object.
+            frame.value.image = undefined;
+            decoder = new ImageDecoder();
+          }
+          break;
+        case 'stringChunk':
+          if (decoder) decoder.append(token.value);
+          else if (stringValue.length < 129) stringValue += token.value.slice(0, 129 - stringValue.length);
+          break;
+        case 'endString':
+          if (frame?.role === 'image' && decoder) {
+            frame.value.image = decoder.finish();
+            decoder = undefined;
+          } else {
+            assign(frame, stringValue);
+            if (frame?.role === 'data') pendingBytes = 0;
+          }
+          break;
+        case 'numberValue':
+        case 'trueValue':
+        case 'falseValue':
+        case 'nullValue':
+          assign(frame, token.name === 'numberValue' ? Number(token.value) : token.value);
+          if (frame?.role === 'data') pendingBytes = 0;
+          break;
+      }
+    }
+  }
+
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      // Small slices bound the number of completed images retained before backpressure.
       for (let offset = 0; offset < value.length; offset += 65536) {
         const part = value.subarray(offset, offset + 65536);
         pendingBytes += part.length;
-        if (pendingBytes > MAX_EVENT_BYTES) throw imageResponseTooLarge();
-        parser.write(part);
-        while (queue.length) yield queue.shift();
+        if (pendingBytes > MAX_EVENT_BYTES)
+          throw new ImageResponseError('返回的图片太大。可以选小一点的尺寸，或改用 WebP 后再试。', {
+            reason: 'image_response_too_large',
+          });
+        yield* images(readTokens(part));
       }
     }
-    if (!parser.isEnded) parser.end();
-    while (queue.length) yield queue.shift();
+    yield* images(readTokens());
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

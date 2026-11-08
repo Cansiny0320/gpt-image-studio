@@ -1,5 +1,5 @@
 <h1 align="center">GPT Image Studio</h1>
-<p align="center">Generate and edit images with GPT Image, with streaming previews, local history, and deployment on Cloudflare.</p>
+<p align="center">Generate and edit images with GPT Image, with local history and deployment on Cloudflare.</p>
 <p align="center">
   <a href="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml"><img src="https://github.com/Cansiny0320/gpt-image-studio/actions/workflows/check.yml/badge.svg" alt="Checks"></a>
 </p>
@@ -18,7 +18,7 @@
 
 Visit [image.cansiny.top](https://image.cansiny.top) and enter a prompt to generate an image. No account or personal API key is required.
 
-Generate images from text, edit reference images, upload mask or markup PNGs, generate up to three images per request, and watch streaming previews. Available size, quality, background, output format, and advanced settings depend on the selected model.
+Generate images from text, edit reference images, and upload mask or markup PNGs. You can generate up to three images per request. Available size, quality, background, output format, and advanced settings depend on the selected model.
 
 See the [reference image editing example](https://image.cansiny.top/guide#reference-edit-example) for the original image, full prompt, and result.
 

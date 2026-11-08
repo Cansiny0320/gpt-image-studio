@@ -5,11 +5,11 @@ Approved 2026-11-06. Anonymous image generation and editing using the owner's se
 ## Product and data contract
 - TanStack Start/Router + React 19, TypeScript, Tailwind v4, shadcn/base-nova, Lucide, Zustand, oRPC; pnpm workspace and Vite+.
 - Workers proxies the Images API. Turnstile is verified server-side, along with origin, request size, and model-specific parameter validation. No arbitrary upstream URLs or credentials from browsers.
-- Cover applicable generation/edit parameters: model, prompt, size, quality, n, background, output format/compression, moderation, complexity, stream/partial images, input fidelity, mask, markup, GIF fields, SVG author settings. Gate preview capabilities explicitly. No retired DALL-E parameters. Source image inputs use uploads, not arbitrary remote fetches.
+- Cover applicable generation/edit parameters: model, prompt, size, quality, n, background, output format/compression, moderation, complexity, input fidelity, mask, markup, GIF fields, SVG author settings. New requests disable intermediate previews; legacy preview settings remain readable in backups. Gate experimental formats explicitly. No retired DALL-E parameters. Source image inputs use uploads, not arbitrary remote fetches.
 - Browser IndexedDB stores the complete prompt, output image Blobs, parameters, timestamps, and local history. Export/import works without a server history endpoint. Reference uploads are not part of local history.
 - D1 records prompts and selected generation settings at request reservation, including requests where generation fails, plus necessary status and association metadata. Private R2 records final binary images and the original reference files from newly accepted edit requests. The reference object prefix uses the D1 request ID, with files numbered in upload order. Reference archival begins after validation and request reservation and before the upstream call. Successfully stored references are retained even if generation fails. Server archives have no automatic expiration. There is no public bucket or image read endpoint. Local history deletion does not delete archives.
 - Generation response returns the output directly. Archive errors are explicit but must not discard a valid generated image. Browser persistence errors preserve download access.
-- Masks, markup and streaming previews are transient. A reference write failure does not block generation or discard successfully archived files. A successful generation with a reference write failure reports the existing archive warning and records `archive_failed`. No automatic retries of paid generation requests. Duplicate clicks are suppressed. Network uncertainty is reported explicitly.
+- Masks and markup are transient. A reference write failure does not block generation or discard successfully archived files. A successful generation with a reference write failure reports the existing archive warning and records `archive_failed`. No automatic retries of paid generation requests. Duplicate clicks are suppressed. Network uncertainty is reported explicitly.
 - UI: prompt and controls on left, output preview on right; history drawer, mobile stacked layout. Advanced controls collapse. Download and send-to-edit are primary output actions. No promotional content or nested decorative cards.
 - Follow-up: add /sponsor and a README donation section reusing the owner's existing Heybox Daily WeChat/Alipay artwork. No imported supporter list or extra service.
 
@@ -21,7 +21,7 @@ Approved 2026-11-06. Anonymous image generation and editing using the owner's se
 - Browser data eviction is possible: export/import and explicit save failures are required. No automatic server recovery of history.
 
 ## Acceptance
-- Generate, edit with references/mask/markup, batch outputs, supported format parameters, and partial streaming have validated contracts and meaningful regression tests.
+- Generate, edit with references/mask/markup, batch outputs, supported format parameters, and final image delivery have validated contracts and meaningful regression tests.
 - All user-visible history is local, works after reload and offline, and never requests archive reads.
 - Key absent from frontend assets. Turnstile/origin/parameter rejection occurs before OpenAI calls. Errors do not leak provider details or credentials.
 - Typecheck, lint/format check, unit/integration tests, production build, and local browser checks pass. A small live API smoke test is attempted with existing key; account or API limitations are reported without fake success.

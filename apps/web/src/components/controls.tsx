@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { Select as BaseSelect } from '@base-ui/react/select';
-import { MAX_IMAGES_PER_REQUEST } from '../lib/contract';
+import { MAX_IMAGES_PER_REQUEST, withoutIntermediatePreviews } from '../lib/contract';
 import type { Settings } from '../lib/contract';
 import { capabilities, models, standardSizes, type ImageModel } from '../lib/models';
 import { LocalImage } from './image';
@@ -69,7 +69,8 @@ export function Select({
 }
 
 export function normalizeSettings(s: Settings): Settings {
-  const result = { ...s, n: Math.min(s.n, MAX_IMAGES_PER_REQUEST) };
+  const result = withoutIntermediatePreviews(s);
+  result.n = Math.min(result.n, MAX_IMAGES_PER_REQUEST);
   const caps = capabilities(s.model);
   if (!caps.advanced) {
     delete result.complexity;
@@ -84,10 +85,6 @@ export function normalizeSettings(s: Settings): Settings {
   if (s.mode !== 'edit' || !caps.fidelity) delete result.input_fidelity;
   if (!caps.highFidelity && result.input_fidelity === 'high') result.input_fidelity = 'low';
   if (s.mode === 'edit' && result.output_format === 'svg') result.output_format = 'png';
-  if (['svg', 'gif'].includes(result.output_format)) {
-    result.stream = false;
-    result.partial_images = 0;
-  }
   if (result.output_format === 'svg') result.n = 1;
   else delete result.svg;
   if (result.output_format !== 'gif') {
@@ -97,7 +94,6 @@ export function normalizeSettings(s: Settings): Settings {
   if (!['jpeg', 'webp'].includes(result.output_format)) delete result.output_compression;
   if (!['png', 'webp'].includes(result.output_format) && result.background === 'transparent')
     result.background = 'opaque';
-  if (!result.stream) result.partial_images = 0;
   return result;
 }
 export function applySettingsPatch(current: Settings, patch: Partial<Settings>): Settings {
@@ -328,29 +324,6 @@ export function Controls({
               onChange={(v) => update({ moderation: v as Settings['moderation'] })}
             />
           </Field>
-          {!['svg', 'gif'].includes(s.output_format) && (
-            <>
-              <label className="toggle-row">
-                <span>流式预览</span>
-                <input
-                  type="checkbox"
-                  checked={s.stream}
-                  onChange={(e) =>
-                    update({ stream: e.target.checked, partial_images: e.target.checked ? 1 : 0 })
-                  }
-                />
-              </label>
-              {s.stream && (
-                <Field label="中间预览数量">
-                  <Select
-                    value={String(s.partial_images)}
-                    values={['0', '1', '2', '3']}
-                    onChange={(v) => update({ partial_images: Number(v) })}
-                  />
-                </Field>
-              )}
-            </>
-          )}
           {s.output_format === 'gif' && (
             <div className="field-pair">
               <Field label="帧数">

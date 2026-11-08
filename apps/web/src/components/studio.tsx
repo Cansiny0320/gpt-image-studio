@@ -20,6 +20,7 @@ import { defaultSettings, generationSettingsSchema, outputEventSchema, type Sett
 import { client } from '../lib/rpc';
 import { mimeTypes } from '../lib/models';
 import { saveArtwork, downloadBlob, type Artwork } from '../lib/history';
+import { readLines } from '../lib/read-lines';
 
 function imageBlob(b64: string, format: Settings['output_format']) {
   const binary = atob(b64);
@@ -117,7 +118,6 @@ export function Studio() {
       if (guides.mask) form.set('mask', guides.mask);
       if (guides.markup) form.set('markup', guides.markup);
     }
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await fetch('/api/generate', { method: 'POST', body: form, signal: abort.signal });
       if (!response.ok) {
@@ -125,9 +125,6 @@ export function Studio() {
         throw new Error(data.error ?? '生成失败，请稍后再试');
       }
       if (!response.body) throw new Error('服务未返回结果');
-      reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let completed = false;
       const consume = async (line: string) => {
         if (!line.trim()) return;
@@ -157,19 +154,7 @@ export function Studio() {
         if (!event.archived) setNotice('图片已生成，但服务端留档失败；请保留本地副本。');
         await persist(art);
       };
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        let index: number;
-        while ((index = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, index);
-          buffer = buffer.slice(index + 1);
-          await consume(line);
-        }
-        if (buffer.length > 24 * 1024 * 1024) throw new Error('返回图片过大，请降低尺寸');
-        if (done) break;
-      }
-      if (buffer.trim()) await consume(buffer);
+      for await (const line of readLines(response.body, 24 * 1024 * 1024)) await consume(line);
       if (!completed) throw new Error('连接已中断，已收到的图片仍可下载。上游可能仍在处理，请勿连续提交。');
     } catch (e) {
       setError(
@@ -180,8 +165,6 @@ export function Studio() {
             : '生成失败',
       );
     } finally {
-      await reader?.cancel().catch(() => {});
-      reader?.releaseLock();
       controller.current = null;
       setBusy(false);
     }

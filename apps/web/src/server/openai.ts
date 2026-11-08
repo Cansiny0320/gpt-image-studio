@@ -2,14 +2,9 @@ import { z } from 'zod';
 import { formats } from '../lib/models';
 import type { Settings, OutputEvent } from '../lib/contract';
 import type { Archive } from './archive';
-import {
-  imageAbortReason,
-  ImageResponseError,
-  imageTimeoutMessage,
-  PublicError,
-  unreadableImageMessage,
-} from './errors';
-import { readJSONImages, readSSE } from './stream';
+import { imageAbortReason, ImageResponseError, imageTimeoutMessage, PublicError } from './errors';
+import { invalidImagePayload, type ImagePayload } from './image-payload';
+import { readJSONImages } from './stream';
 import {
   upstreamDiagnostic,
   upstreamErrorCode,
@@ -20,25 +15,21 @@ import type { ImageTransport } from './transport';
 
 const missingImageMessage = '这次没有收到完整图片。请稍后再试。';
 
-const imageSchema = z.object({
-  b64_json: z
-    .string()
-    .min(1)
-    .max(19 * 1024 * 1024)
-    .regex(/^[A-Za-z0-9+/]*={0,2}$/),
-  output_format: z.enum(formats).optional(),
-});
+const outputFormat = z.enum(formats).optional();
+export type ServerImageEvent = Omit<Extract<OutputEvent, { type: 'image' }>, 'b64'> & {
+  image: ImagePayload;
+};
 export function upstreamBody(
   settings: Settings,
   files: { images: File[]; mask?: File; markup?: File },
   safetyId: string,
 ) {
-  const { mode, prompt, partial_images, ...options } = settings;
+  const { mode, prompt, partial_images: _partialImages, ...options } = settings;
   const params = {
     ...options,
     prompt,
     safety_identifier: safetyId,
-    ...(settings.stream ? { partial_images } : {}),
+    stream: false,
   };
   if (mode === 'generate') return JSON.stringify(params);
   const form = new FormData();
@@ -133,14 +124,11 @@ export async function* imageEvents(
   requestId: string,
   archive: Archive,
   referenceArchiveFailed = false,
-): AsyncGenerator<OutputEvent> {
+): AsyncGenerator<ServerImageEvent | Extract<OutputEvent, { type: 'done' }>> {
   if (!response.body) throw new PublicError(missingImageMessage, 502);
-  const events = settings.stream ? readSSE(response.body) : readJSONImages(response.body);
   let count = 0;
   let archiveFailed = referenceArchiveFailed;
-  for await (const value of events) {
-    if (typeof value !== 'object' || value === null) continue;
-    const event = value as Record<string, unknown>;
+  for await (const event of readJSONImages(response.body)) {
     if (event.type === 'error' || event.error) {
       const detail = event.error && typeof event.error === 'object' ? event.error : event;
       const code = upstreamErrorCode('code' in detail ? detail.code : undefined);
@@ -149,18 +137,9 @@ export async function* imageEvents(
         code,
       });
     }
-    const partial =
-      settings.stream && typeof event.type === 'string' && event.type.endsWith('.partial_image');
-    const final = !settings.stream || (typeof event.type === 'string' && event.type.endsWith('.completed'));
-    if (!partial && !final) continue;
-    const parsed = imageSchema.safeParse(event);
-    if (!parsed.success)
-      throw new ImageResponseError(unreadableImageMessage, { reason: 'invalid_image_payload' });
-    const format = parsed.data.output_format ?? settings.output_format;
-    if (partial) {
-      yield { type: 'preview', b64: parsed.data.b64_json, format };
-      continue;
-    }
+    const parsed = outputFormat.safeParse(event.output_format);
+    if (!parsed.success || !event.image) throw invalidImagePayload();
+    const format = parsed.data ?? settings.output_format;
     if (count >= settings.n)
       throw new ImageResponseError('图片服务返回了多余的图片。已收到的图片可以保存。', {
         reason: 'unexpected_image_count',
@@ -170,12 +149,12 @@ export async function* imageEvents(
     const id = `${requestId}-${count}`;
     let archived = !referenceArchiveFailed;
     try {
-      await archive.save(requestId, count, { ...settings, output_format: format }, parsed.data.b64_json);
+      await archive.save(requestId, count, { ...settings, output_format: format }, event.image);
     } catch {
       archived = false;
       archiveFailed = true;
     }
-    yield { type: 'image', id, b64: parsed.data.b64_json, format, archived };
+    yield { type: 'image', id, image: event.image, format, archived };
     count++;
   }
   if (count !== settings.n)

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { defaultSettings } from '../lib/contract';
 import { imageEvents, openImageRequest, upstreamBody } from './openai';
-import { readSSE, readJSONImages } from './stream';
+import { readJSONImages } from './stream';
 import { assertOrigin, readLimited } from './security';
-import type { Archive } from './archive';
+import { createArchive, type Archive } from './archive';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aUe0AAAAASUVORK5CYII=';
 function archive(): Archive {
@@ -36,16 +36,6 @@ describe('upstream response and archival', () => {
       expect(payload.partial_images).toBeUndefined();
     },
   );
-  it('parses fragmented SSE and archives final images only', async () => {
-    const a = archive();
-    const text = `data: ${JSON.stringify({ type: 'image_generation.partial_image', b64_json: png })}\r\n\r\ndata: ${JSON.stringify({ type: 'image_generation.completed', b64_json: png })}\r\n\r\n`;
-    const stream = bytes([...text]);
-    const events = [];
-    for await (const event of imageEvents(new Response(stream), defaultSettings, 'job', a))
-      events.push(event);
-    expect(events.map((e) => e.type)).toEqual(['preview', 'image', 'done']);
-    expect(a.save).toHaveBeenCalledTimes(1);
-  });
   it('keeps the completed image downloadable if archive storage fails', async () => {
     const a = archive();
     a.save = vi.fn(async () => {
@@ -59,13 +49,32 @@ describe('upstream response and archival', () => {
       a,
     ))
       events.push(e);
-    expect(events[0]).toMatchObject({ type: 'image', b64: png, archived: false });
+    expect(events[0]).toMatchObject({ type: 'image', archived: false });
+    if (events[0].type === 'image')
+      expect(Buffer.concat(events[0].image.chunks).toString('base64')).toBe(png);
     expect(events[1].type).toBe('done');
+  });
+  it('unblocks the archive writer if R2 rejects before reading the image', async () => {
+    vi.stubGlobal('FixedLengthStream', function () {
+      return new TransformStream();
+    });
+    const put = vi.fn(async () => {
+      throw new Error('storage unavailable');
+    });
+    const image = Buffer.from(png, 'base64');
+    try {
+      const storage = createArchive({ DB: {} as Env['DB'], IMAGES: { put } as unknown as Env['IMAGES'] });
+      await expect(
+        storage.save('job', 0, defaultSettings, { chunks: [image], byteLength: image.length }),
+      ).rejects.toThrow('storage unavailable');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it('detects truncated streams without declaring success', async () => {
     const collect = async () => {
       for await (const _event of imageEvents(
-        new Response(bytes(['data: {"type":"image_generation.partial_image","b64_json":"YQ=="}\n\n'])),
+        new Response(bytes(['{"data":[{"b64_json":"YQ'])),
         defaultSettings,
         'job',
         archive(),
@@ -73,18 +82,14 @@ describe('upstream response and archival', () => {
         /* consume */
       }
     };
-    await expect(collect()).rejects.toThrow('这次没有收到完整图片');
+    await expect(collect()).rejects.toMatchObject({ diagnostic: { reason: 'invalid_upstream_json' } });
   });
   it('parses multiple JSON images across network chunks', async () => {
-    const out = [];
-    const json = JSON.stringify({ data: [{ b64_json: png }, { b64_json: png }], usage: { total_tokens: 2 } });
-    for await (const e of readJSONImages(bytes([...json]))) out.push(e);
-    expect(out).toHaveLength(2);
-  });
-  it('handles SSE comments and a final event without trailing newline', async () => {
-    const out = [];
-    for await (const e of readSSE(bytes([': ping\n\ndata: {"ok":true}']))) out.push(e);
-    expect(out).toEqual([{ ok: true }]);
+    const json =
+      '{"data":[{"b64_json":"YQ\\u003d=","output_format":"png"},{"output_format":"webp","b64_json":"YWI"}],"usage":{"ignored":"text"}}';
+    const out = await Array.fromAsync(readJSONImages(bytes([...json])));
+    expect(out.map((e) => e.output_format)).toEqual(['png', 'webp']);
+    expect(out.map((e) => Buffer.concat(e.image?.chunks ?? []).toString())).toEqual(['a', 'ab']);
   });
   it('does not retry failed API calls or leak upstream bodies', async () => {
     const fetcher = vi.fn(async () => new Response('secret diagnostic', { status: 429 }));

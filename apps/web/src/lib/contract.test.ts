@@ -63,6 +63,12 @@ describe('site generation limit', () => {
       true,
     );
   });
+  it('keeps historical preview settings readable but disables them when reused', () => {
+    const legacy = { ...defaultSettings, prompt: 'An old image', stream: true, partial_images: 3 };
+    expect(settingsSchema.parse(legacy)).toMatchObject({ stream: true, partial_images: 3 });
+    expect(generationSettingsSchema.parse(legacy)).toMatchObject({ stream: false, partial_images: 0 });
+    expect(normalizeSettings(legacy)).toMatchObject({ stream: false, partial_images: 0 });
+  });
 });
 
 describe('GIF model compatibility', () => {
