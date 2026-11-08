@@ -35,6 +35,7 @@ function request(body = form(), from = origin) {
 function archive(): Archive {
   return {
     reserve: vi.fn(async () => true),
+    saveReference: vi.fn<Archive['saveReference']>(async () => {}),
     save: vi.fn(async () => 'image-id'),
     finish: vi.fn(async () => {}),
   };
@@ -56,7 +57,8 @@ describe('API boundary', () => {
       if (mode === 'edit')
         body.set('image', new File([Buffer.from(png, 'base64')], 'test.png', { type: 'image/png' }));
       const fetcher = upstream();
-      const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: archive() });
+      const a = archive();
+      const response = await handleApi(request(body), gatewayEnv, { fetcher, archive: a });
       const text = await response.text();
       expect(response.status).toBe(200);
       expect(fetcher).toHaveBeenCalledTimes(1);
@@ -78,6 +80,8 @@ describe('API boundary', () => {
         expect(headers.has('content-type')).toBe(false);
         expect(init?.body).toBeInstanceOf(FormData);
         expect((init!.body as FormData).getAll('image[]')).toHaveLength(1);
+      } else {
+        expect(a.saveReference).not.toHaveBeenCalled();
       }
     },
   );
@@ -246,15 +250,19 @@ describe('API boundary', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('stops duplicate submissions before contacting OpenAI', async () => {
+    const body = form('edit');
+    body.set('image', new File([Buffer.from(png, 'base64')], 'reference.png', { type: 'image/png' }));
     const a = archive();
     a.reserve = vi.fn(async () => false);
     const fetcher = upstream();
-    const response = await handleApi(request(), env, { fetcher, archive: a });
+    const response = await handleApi(request(body), env, { fetcher, archive: a });
     expect(response.status).toBe(409);
+    expect(a.saveReference).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('records the selected settings even when generation fails before returning an image', async () => {
-    const body = form();
+    const body = form('edit');
+    body.set('image', new File([Buffer.from(png, 'base64')], 'reference.png', { type: 'image/png' }));
     const payload = JSON.parse(body.get('payload') as string);
     Object.assign(payload.settings, { size: '1536x1024', quality: 'high', output_format: 'webp' });
     body.set('payload', JSON.stringify(payload));
@@ -269,6 +277,8 @@ describe('API boundary', () => {
       expect(response.status).toBe(503);
       expect(a.reserve).toHaveBeenCalledWith(payload.requestId, payload.settings);
       expect(a.reserve).toHaveBeenCalledBefore(fetcher);
+      expect(a.saveReference).toHaveBeenCalledExactlyOnceWith(payload.requestId, 0, expect.any(File));
+      expect(a.saveReference).toHaveBeenCalledBefore(fetcher);
       expect(a.finish).toHaveBeenCalledWith(payload.requestId, 'failed');
       expect(a.save).not.toHaveBeenCalled();
       expect(log).toHaveBeenCalledExactlyOnceWith(
@@ -496,10 +506,74 @@ describe('Japan relay', () => {
   });
 });
 describe('reference uploads', () => {
+  it.each(['mask', 'markup'])(
+    'archives original references in upload order and excludes %s',
+    async (field) => {
+      const body = form('edit');
+      const bytes = Buffer.from(png, 'base64');
+      const files = ['first.png', 'second.png'].map((name) => new File([bytes], name, { type: 'image/png' }));
+      for (const file of files) body.append('image', file);
+      body.set(field, new File([bytes], 'guide.png', { type: 'image/png' }));
+      const { requestId } = JSON.parse(body.get('payload') as string);
+      const a = archive();
+      const fetcher = upstream();
+
+      const response = await handleApi(request(body), env, { fetcher, archive: a });
+      expect(response.status).toBe(200);
+      await response.text();
+      const saveReference = vi.mocked(a.saveReference);
+      expect(a.reserve).toHaveBeenCalledBefore(saveReference);
+      expect(saveReference).toHaveBeenCalledBefore(fetcher);
+      const calls = saveReference.mock.calls;
+      expect(calls).toHaveLength(2);
+      for (const [index, [id, position, file]] of calls.entries()) {
+        expect([id, position, file.name, file.type]).toEqual([
+          requestId,
+          index,
+          files[index].name,
+          'image/png',
+        ]);
+        expect(Buffer.from(await file.arrayBuffer())).toEqual(bytes);
+      }
+      expect(a.finish).toHaveBeenCalledWith(requestId, 'complete');
+    },
+  );
+
+  it('continues saving references and returns the final image when one reference write fails', async () => {
+    const body = form('edit');
+    const bytes = Buffer.from(png, 'base64');
+    for (const name of ['first.png', 'second.png']) {
+      body.append('image', new File([bytes], name, { type: 'image/png' }));
+    }
+    const { requestId } = JSON.parse(body.get('payload') as string);
+    const a = archive();
+    vi.mocked(a.saveReference).mockRejectedValueOnce(new Error('storage unavailable'));
+
+    const response = await handleApi(request(body), env, { fetcher: upstream(), archive: a });
+    expect(response.status).toBe(200);
+    const events = (await response.text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'image', b64: png, archived: false }),
+      { type: 'done', count: 1 },
+    ]);
+    expect(a.saveReference).toHaveBeenCalledTimes(2);
+    expect(a.saveReference).toHaveBeenNthCalledWith(2, requestId, 1, expect.any(File));
+    expect(a.save).toHaveBeenCalledTimes(1);
+    expect(a.finish).toHaveBeenCalledWith(requestId, 'archive_failed');
+  });
+
   it('checks image content instead of trusting the MIME label', async () => {
     const body = form('edit');
     body.set('image', new File(['not an image'], 'fake.png', { type: 'image/png' }));
     await expect(parseInput(request(body), false)).rejects.toThrow('无法识别');
+    const a = archive();
+    const fetcher = upstream();
+    expect((await handleApi(request(body), env, { fetcher, archive: a })).status).toBe(400);
+    expect(a.saveReference).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it('accepts a real PNG and rejects a second mutually exclusive edit guide', async () => {
     const image = new File([Buffer.from(png, 'base64')], 'reference.png', { type: 'image/png' });

@@ -52,6 +52,14 @@ export async function handleApi(
     if (!(await archive.reserve(input.requestId, input.settings)))
       throw new PublicError('该请求已提交，请勿重复生成。', 409);
     requestId = input.requestId;
+    let referenceArchiveFailed = false;
+    for (const [index, file] of input.files.images.entries()) {
+      try {
+        await archive.saveReference(requestId, index, file);
+      } catch {
+        referenceArchiveFailed = true;
+      }
+    }
     const digest = await crypto.subtle.digest(
       'SHA-256',
       new TextEncoder().encode(`${env.OPENAI_API_KEY}:${request.headers.get('CF-Connecting-IP') ?? 'local'}`),
@@ -67,7 +75,7 @@ export async function handleApi(
       { requestId, colo: typeof request.cf?.colo === 'string' ? request.cf.colo : undefined },
       transport,
     );
-    const events = imageEvents(upstream, input.settings, requestId, archive);
+    const events = imageEvents(upstream, input.settings, requestId, archive, referenceArchiveFailed);
     const providerId = upstreamRequestId(upstream);
     const logResponseFailure = (error?: unknown) => {
       const diagnostic = error instanceof ImageResponseError ? error.diagnostic : undefined;

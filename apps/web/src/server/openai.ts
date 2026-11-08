@@ -132,11 +132,12 @@ export async function* imageEvents(
   settings: Settings,
   requestId: string,
   archive: Archive,
+  referenceArchiveFailed = false,
 ): AsyncGenerator<OutputEvent> {
   if (!response.body) throw new PublicError(missingImageMessage, 502);
   const events = settings.stream ? readSSE(response.body) : readJSONImages(response.body);
   let count = 0;
-  let archiveFailed = false;
+  let archiveFailed = referenceArchiveFailed;
   for await (const value of events) {
     if (typeof value !== 'object' || value === null) continue;
     const event = value as Record<string, unknown>;
@@ -167,7 +168,7 @@ export async function* imageEvents(
         expectedImages: settings.n,
       });
     const id = `${requestId}-${count}`;
-    let archived = true;
+    let archived = !referenceArchiveFailed;
     try {
       await archive.save(requestId, count, { ...settings, output_format: format }, parsed.data.b64_json);
     } catch {

@@ -20,6 +20,8 @@ Visit [image.cansiny.top](https://image.cansiny.top) and enter a prompt to gener
 
 Generate images from text, edit reference images, upload mask or markup PNGs, generate up to three images per request, and watch streaming previews. Available size, quality, background, output format, and advanced settings depend on the selected model.
 
+See the [reference image editing example](https://image.cansiny.top/guide#reference-edit-example) for the original image, full prompt, and result.
+
 Download a result or use it for another edit. History stays in your browser, including full prompts, settings, and images, with ZIP export and import.
 
 ## Feedback

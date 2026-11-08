@@ -8,6 +8,7 @@ import { PublicError } from './errors';
 
 export interface Archive {
   reserve(id: string, settings: Settings): Promise<boolean>;
+  saveReference(id: string, index: number, file: File): Promise<void>;
   save(id: string, index: number, settings: Settings, b64: string): Promise<string>;
   finish(id: string, status: string): Promise<void>;
 }
@@ -22,6 +23,13 @@ export function createArchive(env: Pick<Env, 'DB' | 'IMAGES'>): Archive {
         .onConflictDoNothing()
         .returning({ id: requests.id });
       return rows.length === 1;
+    },
+    async saveReference(requestId, index, file) {
+      const position = String(index + 1).padStart(2, '0');
+      const extension = file.type.slice('image/'.length);
+      await env.IMAGES.put(`references/${requestId}/${position}.${extension}`, file, {
+        httpMetadata: { contentType: file.type },
+      });
     },
     async save(requestId, index, settings, b64) {
       const id = `${requestId}-${index}`;

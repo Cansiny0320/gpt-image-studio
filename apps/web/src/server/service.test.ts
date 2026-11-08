@@ -7,7 +7,12 @@ import type { Archive } from './archive';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aUe0AAAAASUVORK5CYII=';
 function archive(): Archive {
-  return { reserve: vi.fn(async () => true), save: vi.fn(async () => 'id'), finish: vi.fn(async () => {}) };
+  return {
+    reserve: vi.fn(async () => true),
+    saveReference: vi.fn(async () => {}),
+    save: vi.fn(async () => 'id'),
+    finish: vi.fn(async () => {}),
+  };
 }
 function bytes(parts: string[]) {
   const encoder = new TextEncoder();
