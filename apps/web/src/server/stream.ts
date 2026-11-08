@@ -22,22 +22,32 @@ export async function* readLines(
 ): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  let pieces: string[] = [];
+  let length = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      const chunk = done ? decoder.decode() : decoder.decode(value, { stream: true });
+      // An image can span thousands of chunks on one line. Search each chunk only once.
+      let start = 0;
       let end: number;
-      while ((end = buffer.indexOf('\n')) >= 0) {
-        if (end > limit) throw imageResponseTooLarge();
-        const line = buffer.slice(0, end).replace(/\r$/, '');
-        buffer = buffer.slice(end + 1);
+      while ((end = chunk.indexOf('\n', start)) >= 0) {
+        if (length + end - start > limit) throw imageResponseTooLarge();
+        pieces.push(chunk.slice(start, end));
+        const line = pieces.join('').replace(/\r$/, '');
+        pieces = [];
+        length = 0;
+        start = end + 1;
         yield line;
       }
-      if (buffer.length > limit) throw imageResponseTooLarge();
+      if (start < chunk.length) {
+        length += chunk.length - start;
+        if (length > limit) throw imageResponseTooLarge();
+        pieces.push(chunk.slice(start));
+      }
       if (done) break;
     }
-    if (buffer) yield buffer;
+    if (length) yield pieces.join('');
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
