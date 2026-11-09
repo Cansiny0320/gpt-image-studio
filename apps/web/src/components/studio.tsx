@@ -22,6 +22,8 @@ import { mimeTypes } from '../lib/models';
 import { saveArtwork, downloadBlob, type Artwork } from '../lib/history';
 import { readLines } from '../lib/read-lines';
 
+const githubRepository = 'https://github.com/Cansiny0320/gpt-image-studio';
+
 function imageBlob(b64: string, format: Settings['output_format']) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -210,7 +212,7 @@ export function Studio() {
               </Link>
             </h1>
             <a
-              href="https://github.com/Cansiny0320/gpt-image-studio"
+              href={githubRepository}
               target="_blank"
               rel="noreferrer"
               aria-label="GitHub 仓库"
@@ -286,7 +288,19 @@ export function Studio() {
           </fieldset>
           <div className="generate-area">
             {config?.generationPauseReason ? (
-              <output className="error">{config.generationPauseReason}</output>
+              <output className="error">
+                <span>
+                  {config.generationPauseReason}重新开放的通知，请关注{' '}
+                  <a className="underline" href={githubRepository} target="_blank" rel="noreferrer">
+                    GitHub
+                  </a>{' '}
+                  或{' '}
+                  <a className="underline" href="https://x.com/cansiny0320i" target="_blank" rel="noreferrer">
+                    X
+                  </a>
+                  。
+                </span>
+              </output>
             ) : config && !config.configured ? (
               <p className="error">生图服务尚未配置完成，请联系站点维护者。</p>
             ) : null}

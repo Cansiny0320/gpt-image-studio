@@ -10,9 +10,7 @@ import { imageTransport, type TransportEnvironment } from './transport';
 import { upstreamRequestId } from './upstream-error';
 
 function generationPauseReason(env: Env) {
-  return env.GENERATION_PAUSED === 'true'
-    ? '图片生成额度已用完，服务暂时关闭。重新开放的通知，请关注 GitHub 或 X。'
-    : null;
+  return env.GENERATION_PAUSED === 'true' ? '图片生成额度已用完，服务暂时关闭。' : null;
 }
 
 export const router = {

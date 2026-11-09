@@ -53,9 +53,7 @@ describe('API boundary', () => {
       { fetcher, archive: a },
     );
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      error: '图片生成额度已用完，服务暂时关闭。重新开放的通知，请关注 GitHub 或 X。',
-    });
+    expect(await response.json()).toEqual({ error: '图片生成额度已用完，服务暂时关闭。' });
     expect(fetcher).not.toHaveBeenCalled();
     expect(a.reserve).not.toHaveBeenCalled();
   });
