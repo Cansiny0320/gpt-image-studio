@@ -44,6 +44,22 @@ function upstream() {
   return vi.fn<typeof fetch>(async () => Response.json({ data: [{ b64_json: png }] }));
 }
 describe('API boundary', () => {
+  it('rejects generation while paused before contacting upstream or archiving', async () => {
+    const fetcher = upstream();
+    const a = archive();
+    const response = await handleApi(
+      request(),
+      { ...env, GENERATION_PAUSED: 'true' },
+      { fetcher, archive: a },
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: '图片生成额度已用完，服务暂时关闭。重新开放的通知，请关注 GitHub 或 X。',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(a.reserve).not.toHaveBeenCalled();
+  });
+
   const gatewayEnv = {
     ...env,
     AI_GATEWAY_ACCOUNT_ID: 'a'.repeat(32),

@@ -3,6 +3,7 @@ APP_ENV=development
 APP_ORIGIN=http://127.0.0.1:4327
 OPENAI_API_KEY=
 ENABLE_PREVIEW_FORMATS=false
+GENERATION_PAUSED=false
 # Optional: leave account and gateway ID empty to call OpenAI directly.
 AI_GATEWAY_ACCOUNT_ID=
 AI_GATEWAY_ID=

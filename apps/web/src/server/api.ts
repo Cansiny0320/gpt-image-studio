@@ -9,11 +9,18 @@ import { imageAbortReason, ImageResponseError, imageTimeoutMessage, PublicError,
 import { imageTransport, type TransportEnvironment } from './transport';
 import { upstreamRequestId } from './upstream-error';
 
+function generationPauseReason(env: Env) {
+  return env.GENERATION_PAUSED === 'true'
+    ? '图片生成额度已用完，服务暂时关闭。重新开放的通知，请关注 GitHub 或 X。'
+    : null;
+}
+
 export const router = {
   config: os.$context<{ env: Env }>().handler(({ context }) => ({
     models,
     previewFormats: context.env.ENABLE_PREVIEW_FORMATS === 'true',
     configured: Boolean(context.env.OPENAI_API_KEY && context.env.APP_ORIGIN),
+    generationPauseReason: generationPauseReason(context.env),
   })),
 };
 const rpc = new RPCHandler(router);
@@ -41,6 +48,8 @@ export async function handleApi(
   }
   if (path !== '/api/generate') return new Response('Not found', { status: 404, headers });
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers });
+  const pauseReason = generationPauseReason(env);
+  if (pauseReason) return Response.json({ error: pauseReason }, { status: 503, headers });
   const controller = new AbortController();
   const onDisconnect = () => controller.abort('client_disconnected');
   if (request.signal.aborted) onDisconnect();

@@ -74,7 +74,7 @@ export function Studio() {
     }
   };
   const generate = async () => {
-    if (controller.current || busy) return;
+    if (controller.current || busy || !config?.configured || config.generationPauseReason) return;
     const parsed = generationSettingsSchema.safeParse(settings);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? '请检查参数');
@@ -285,9 +285,11 @@ export function Studio() {
             />
           </fieldset>
           <div className="generate-area">
-            {config && !config.configured && (
+            {config?.generationPauseReason ? (
+              <output className="error">{config.generationPauseReason}</output>
+            ) : config && !config.configured ? (
               <p className="error">生图服务尚未配置完成，请联系站点维护者。</p>
-            )}
+            ) : null}
             {error && (
               <div role="alert" className="error">
                 {error}
@@ -299,7 +301,9 @@ export function Studio() {
             <div className="generate-buttons">
               <Button
                 onClick={() => void generate()}
-                disabled={busy || !config?.configured || !settings.prompt.trim()}
+                disabled={
+                  busy || !config?.configured || !!config.generationPauseReason || !settings.prompt.trim()
+                }
                 className="generate-button"
               >
                 {busy ? <LoaderCircle className="spin" size={17} /> : <ImagePlus size={17} />}
